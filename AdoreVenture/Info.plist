@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>UNSPLASH_ACCESS_KEY</key>
+    <string>qGrmpFFfwnLDsA3-PMboebL4qB-XniTIldN5zfQFYnc</string>
+    <key>OPENAI_API_KEY</key>
+    <string>YOUR_OPENAI_API_KEY</string>
+    
+    <!-- URL Schemes for Social Login -->
+    <key>CFBundleURLTypes</key>
+    <array>
+        <!-- Google Sign-In -->
+        <dict>
+            <key>CFBundleURLName</key>
+            <string>REVERSED_CLIENT_ID</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>com.googleusercontent.apps.511063168199-99konigv6rmlfedetmics0pqsgk5ajfb</string>
+            </array>
+        </dict>
+        
+        <!-- Apple Sign-In -->
+        <dict>
+            <key>CFBundleURLName</key>
+            <string>appleid</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>com.DagmawiMulualem.AdoreVenture</string>
+            </array>
+        </dict>
+    </array>
+</dict>
+</plist>
+

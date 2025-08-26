@@ -1,0 +1,67 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // User authentication check
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    // Check if user owns the document
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+
+    
+    // Idea cache rules - allow read/write for authenticated users
+    match /idea_cache/{cacheId} {
+      allow read, write: if isAuthenticated();
+    }
+    
+    // New cache system collections - allow read/write for authenticated users
+    match /ideaIndexes/{key} {
+      allow read, write: if isAuthenticated();
+    }
+    
+    match /ideas/{ideaId} {
+      allow read, write: if isAuthenticated();
+    }
+    
+    // User profiles - users can only access their own profile
+    match /users/{userId} {
+      allow read, write: if isOwner(userId);
+      
+      // User bookmarks - users can only access their own bookmarks
+      match /bookmarks/{bookmarkId} {
+        allow read, write: if isOwner(userId);
+      }
+      
+      // User preferences - users can only access their own preferences
+      match /preferences/{preferenceId} {
+        allow read, write: if isOwner(userId);
+      }
+    }
+    
+    // Search history - users can only access their own search history
+    match /search_history/{searchId} {
+      allow read, write: if isAuthenticated() && 
+        request.auth.uid == resource.data.userId;
+    }
+    
+    // Subscription data - users can only access their own subscription info
+    match /subscriptions/{subscriptionId} {
+      allow read, write: if isAuthenticated() && 
+        request.auth.uid == resource.data.userId;
+    }
+    
+    // Analytics/usage data - allow read/write for authenticated users
+    match /analytics/{analyticsId} {
+      allow read, write: if isAuthenticated();
+    }
+    
+    // Default deny all other access
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+} 

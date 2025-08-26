@@ -8,17 +8,15 @@
 import SwiftUI
 
 struct ContentView: View {
+    @EnvironmentObject var firebaseManager: FirebaseManager
+    
     var body: some View {
-        VStack {
-            Image(systemName: "globe")
-                .imageScale(.large)
-                .foregroundStyle(.tint)
-            Text("Hello, world!")
-        }
-        .padding()
+        RootView()
+            .environmentObject(firebaseManager)
     }
 }
 
 #Preview {
     ContentView()
 }
+

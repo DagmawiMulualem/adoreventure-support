@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CLIENT_ID</key>
+	<string>511063168199-99konigv6rmlfedetmics0pqsgk5ajfb.apps.googleusercontent.com</string>
+	<key>REVERSED_CLIENT_ID</key>
+	<string>com.googleusercontent.apps.511063168199-99konigv6rmlfedetmics0pqsgk5ajfb</string>
+	<key>API_KEY</key>
+	<string>AIzaSyBv11I6ienHVaeYVQM0J3j1-ZMmWDQ6I5E</string>
+	<key>GCM_SENDER_ID</key>
+	<string>511063168199</string>
+	<key>PLIST_VERSION</key>
+	<string>1</string>
+	<key>BUNDLE_ID</key>
+	<string>com.DagmawiMulualem.AdoreVenture</string>
+	<key>PROJECT_ID</key>
+	<string>adoreventure</string>
+	<key>STORAGE_BUCKET</key>
+	<string>adoreventure.firebasestorage.app</string>
+	<key>IS_ADS_ENABLED</key>
+	<false></false>
+	<key>IS_ANALYTICS_ENABLED</key>
+	<false></false>
+	<key>IS_APPINVITE_ENABLED</key>
+	<true></true>
+	<key>IS_GCM_ENABLED</key>
+	<true></true>
+	<key>IS_SIGNIN_ENABLED</key>
+	<true></true>
+	<key>GOOGLE_APP_ID</key>
+	<string>1:511063168199:ios:fec9d9f0fe7c4b5b265ae2</string>
+</dict>
+</plist>
