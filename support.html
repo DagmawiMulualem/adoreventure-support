@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AdoreVenture Support - Get Help & Contact Us</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: linear-gradient(135deg, rgba(255, 165, 0, 0.95) 0%, rgba(255, 192, 203, 0.92) 100%);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+        
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .header {
+            text-align: center;
+            color: white;
+            margin-bottom: 40px;
+            padding: 40px 20px;
+        }
+        
+        .header h1 {
+            font-size: 3rem;
+            margin-bottom: 15px;
+            font-weight: 800;
+            text-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        }
+        
+        .header p {
+            font-size: 1.3rem;
+            opacity: 0.95;
+            font-weight: 500;
+        }
+        
+        .support-card {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 24px;
+            padding: 40px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            margin-bottom: 30px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        
+        .contact-section {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+        
+        .contact-section h2 {
+            color: #FF8C00;
+            font-size: 2.2rem;
+            margin-bottom: 25px;
+            font-weight: 700;
+        }
+        
+        .contact-info {
+            background: rgba(255, 140, 0, 0.1);
+            padding: 30px;
+            border-radius: 18px;
+            margin: 25px 0;
+            border: 1px solid rgba(255, 140, 0, 0.2);
+        }
+        
+        .contact-item {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 20px 0;
+            font-size: 1.1rem;
+            padding: 15px;
+            background: rgba(255, 255, 255, 0.7);
+            border-radius: 12px;
+            transition: transform 0.2s ease;
+        }
+        
+        .contact-item:hover {
+            transform: translateY(-2px);
+        }
+        
+        .contact-item i {
+            margin-right: 20px;
+            color: #FF8C00;
+            font-size: 1.5rem;
+            width: 30px;
+            text-align: center;
+        }
+        
+        .email-link {
+            color: #FF8C00;
+            text-decoration: none;
+            font-weight: 600;
+            transition: color 0.2s ease;
+        }
+        
+        .email-link:hover {
+            color: #FF6B35;
+            text-decoration: underline;
+        }
+        
+        .faq-section h3 {
+            color: #FF8C00;
+            margin: 35px 0 25px 0;
+            font-size: 1.8rem;
+            font-weight: 700;
+        }
+        
+        .faq-item {
+            background: rgba(255, 140, 0, 0.05);
+            padding: 25px;
+            border-radius: 16px;
+            margin: 20px 0;
+            border: 1px solid rgba(255, 140, 0, 0.1);
+            transition: all 0.3s ease;
+        }
+        
+        .faq-item:hover {
+            background: rgba(255, 140, 0, 0.08);
+            transform: translateX(5px);
+            box-shadow: 0 8px 25px rgba(255, 140, 0, 0.15);
+        }
+        
+        .faq-item h4 {
+            color: #333;
+            margin-bottom: 12px;
+            font-size: 1.2rem;
+            font-weight: 600;
+        }
+        
+        .faq-item p {
+            color: #555;
+            line-height: 1.6;
+        }
+        
+        .response-time {
+            background: linear-gradient(135deg, rgba(76, 175, 80, 0.1) 0%, rgba(129, 199, 132, 0.1) 100%);
+            border: 1px solid rgba(76, 175, 80, 0.3);
+            color: #2e7d32;
+            padding: 20px;
+            border-radius: 16px;
+            text-align: center;
+            margin: 25px 0;
+            font-weight: 500;
+        }
+        
+        .app-features {
+            background: rgba(255, 192, 203, 0.1);
+            padding: 30px;
+            border-radius: 18px;
+            margin: 25px 0;
+            border: 1px solid rgba(255, 192, 203, 0.2);
+        }
+        
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+        
+        .feature-item {
+            background: rgba(255, 255, 255, 0.8);
+            padding: 20px;
+            border-radius: 12px;
+            text-align: center;
+            border: 1px solid rgba(255, 192, 203, 0.2);
+        }
+        
+        .feature-item i {
+            font-size: 2rem;
+            color: #FF8C00;
+            margin-bottom: 10px;
+        }
+        
+        .feature-item h4 {
+            color: #333;
+            margin-bottom: 8px;
+            font-weight: 600;
+        }
+        
+        .feature-item p {
+            color: #666;
+            font-size: 0.9rem;
+        }
+        
+        .footer {
+            text-align: center;
+            color: white;
+            opacity: 0.9;
+            margin-top: 40px;
+            padding: 20px;
+        }
+        
+        .footer p {
+            font-size: 1rem;
+            font-weight: 500;
+        }
+        
+        .heart-icon {
+            color: #FF6B6B;
+            animation: heartbeat 2s ease-in-out infinite;
+        }
+        
+        @keyframes heartbeat {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+        }
+        
+        .cta-button {
+            display: inline-block;
+            background: linear-gradient(135deg, #FF8C00 0%, #FF6B35 100%);
+            color: white;
+            padding: 15px 30px;
+            border-radius: 25px;
+            text-decoration: none;
+            font-weight: 600;
+            margin: 20px 10px;
+            transition: all 0.3s ease;
+            box-shadow: 0 8px 20px rgba(255, 140, 0, 0.3);
+        }
+        
+        .cta-button:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 12px 25px rgba(255, 140, 0, 0.4);
+        }
+        
+        @media (max-width: 768px) {
+            .container {
+                padding: 15px;
+            }
+            
+            .support-card {
+                padding: 25px;
+            }
+            
+            .header h1 {
+                font-size: 2.2rem;
+            }
+            
+            .features-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🚀 AdoreVenture Support</h1>
+            <p>Your AI-powered travel companion needs help? We're here for you!</p>
+        </div>
+        
+        <div class="support-card">
+            <div class="contact-section">
+                <h2><i class="fas fa-headset"></i> Get in Touch</h2>
+                <p>We're here to help you make the most of your travel adventures!</p>
+                
+                <div class="contact-info">
+                    <div class="contact-item">
+                        <i class="fas fa-envelope"></i>
+                        <span>Email: <a href="mailto:support@adoreventure.com" class="email-link">support@adoreventure.com</a></span>
+                    </div>
+                    <div class="contact-item">
+                        <i class="fas fa-clock"></i>
+                        <span>Response Time: Within 24 hours</span>
+                    </div>
+                    <div class="contact-item">
+                        <i class="fas fa-globe"></i>
+                        <span>Support Hours: Monday - Friday, 9 AM - 6 PM EST</span>
+                    </div>
+                </div>
+                
+                <div class="response-time">
+                    <strong>⏰ Quick Response Guarantee:</strong> We typically respond within 2-4 hours during business hours!
+                </div>
+                
+                <div class="app-features">
+                    <h3 style="color: #FF8C00; margin-bottom: 20px;">✨ What Makes AdoreVenture Special</h3>
+                    <div class="features-grid">
+                        <div class="feature-item">
+                            <i class="fas fa-brain"></i>
+                            <h4>AI-Powered</h4>
+                            <p>Smart recommendations based on your preferences</p>
+                        </div>
+                        <div class="feature-item">
+                            <i class="fas fa-heart"></i>
+                            <h4>Personalized</h4>
+                            <p>Tailored experiences just for you</p>
+                        </div>
+                        <div class="featurediv class="feature-item">
+                            <i class="fas fa-map-marked-alt"></i>
+                            <h4>Local Insights</h4>
+                            <p>Discover hidden gems in your area</p>
+                        </div>
+                        <div class="feature-item">
+                            <i class="fas fa-users"></i>
+                            <h4>Group Friendly</h4>
+                            <p>Perfect for friends and family</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="faq-section">
+                <h3><i class="fas fa-question-circle"></i> Frequently Asked Questions</h3>
+                
+                <div class="faq-item">
+                    <h4>How do I get personalized recommendations?</h4>
+                    <p>Simply open the app, select your preferred activity category, and our AI will analyze your preferences to suggest the perfect experiences for you.</p>
+                </div>
+                
+                <div class="faq-item">
+                    <h4>Can I save my favorite activities?</h4>
+                    <p>Yes! Tap the bookmark icon on any activity to save it to your favorites. You can access all saved activities in the Bookmarks tab.</p>
+                </div>
+                
+                <div class="faq-item">
+                    <h4>How accurate are the AI recommendations?</h4>
+                    <p>Our AI analyzes thousands of reviews and local insights to provide highly accurate recommendations. The more you use the app, the better it gets at understanding your preferences.</p>
+                </div>
+                
+                <div class="faq-item">
+                    <h4>Is my data secure?</h4>
+                    <p>Absolutely! We use industry-standard encryption and never share your personal information with third parties. Your privacy and security are our top priorities.</p>
+                </div>
+                
+                <div class="faq-item">
+                    <h4>What if I find an error in the app?</h4>
+                    <p>Please email us with details about the issue, including your device model and iOS version. We'll investigate and fix it as quickly as possible.</p>
+                </div>
+            </div>
+            
+            <div style="text-align: center; margin-top: 30px;">
+                <a href="#" class="cta-button">Download AdoreVenture</a>
+                <a href="#" class="cta-button">Rate Our App</a>
+            </div>
+            
+            <div style="text-align: center; margin-top: 30px;">
+                <p style="color: #666; font-size: 0.9rem;">
+                    <i class="fas fa-heart heart-icon"></i>
+                    Made with love for travelers worldwide
+                </p>
+            </div>
+        </div>
+        
+        <div class="footer">
+            <p>&copy; 2024 AdoreVenture. All rights reserved.</p>
+        </div>
+    </div>
+</body>
+</html>
