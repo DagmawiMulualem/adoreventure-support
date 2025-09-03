@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: adoreventure-support
+    env: static
+    buildCommand: null
+    staticPublishPath: .
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /support.html
