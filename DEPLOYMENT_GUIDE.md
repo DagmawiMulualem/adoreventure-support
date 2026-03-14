@@ -30,7 +30,7 @@ git push -u origin main
 
 ### Step 4: Add Environment Variables
 In Render dashboard, add these environment variables:
-- `OPENAI_API_KEY`: YOUR_OPENAI_API_KEY
+- `OPENAI_API_KEY`: (set in Render dashboard — do not commit real keys)
 - `FLASK_ENV`: production
 
 ### Step 5: Update Firebase Functions
