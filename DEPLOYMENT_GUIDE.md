@@ -1,57 +1,66 @@
 # AdoreVenture Deployment Guide
 
-## 🚀 Python Backend Deployment (Render.com)
+## Repositories (read this first)
 
-### Step 1: Create GitHub Repository
-1. Go to https://github.com/new
-2. Create a new repository named `adoreventure-backend`
-3. Make it public
-4. Don't initialize with README
+See **`BACKEND_REPOS.md`** for what belongs in **support** vs **`adoreventure-backend-clean`**.
 
-### Step 2: Push Backend Code to GitHub
+- **Render (Python API)** → **`https://github.com/DagmawiMulualem/adoreventure-backend-clean`**
+- **Firebase Functions + static support site** → **`adoreventure-support`** (this repo)
+
+---
+
+## Python backend (Render)
+
+### Source of truth
+
+All Flask code lives in **`backend/`** in this repo (`app.py`, `Dockerfile`, `requirements.txt`).
+
+### Deploy / push to Render’s GitHub
+
+From the **project root**:
+
 ```bash
-cd backend
-git remote add origin https://github.com/YOUR_USERNAME/adoreventure-backend.git
-git branch -M main
-git push -u origin main
+./push_backend_render.sh
 ```
 
-### Step 3: Deploy to Render.com
-1. Go to https://render.com
-2. Sign up/Login with GitHub
-3. Click "New +" → "Web Service"
-4. Connect your GitHub repository
-5. Configure:
-   - **Name**: adoreventure-backend
-   - **Environment**: Python
-   - **Build Command**: `pip install -r requirements.txt`
-   - **Start Command**: `gunicorn app:app`
-   - **Plan**: Free
+This splits the `backend/` folder and pushes to **`adoreventure-backend-clean`** `main`, which triggers Render.
 
-### Step 4: Add Environment Variables
-In Render dashboard, add these environment variables:
-- `OPENAI_API_KEY`: (set in Render dashboard — do not commit real keys)
-- `FLASK_ENV`: production
-
-### Step 5: Update Firebase Functions
-Once deployed, update the Firebase Functions with the backend URL:
+Prerequisites (one-time):
 
 ```bash
-npx firebase-tools functions:config:set python_backend.url="https://your-render-app.onrender.com"
+git remote add backend-clean https://github.com/DagmawiMulualem/adoreventure-backend-clean.git
+```
+
+### Environment variables (Render dashboard)
+
+- `OPENAI_API_KEY` — do not commit
+- `FLASK_ENV`: `production`
+
+### Point Firebase Functions at Render
+
+After the service URL is live:
+
+```bash
+npx firebase-tools functions:config:set python_backend.url="https://adoreventure-backend-clean.onrender.com"
 npx firebase-tools deploy --only functions
 ```
 
-## ✅ What's Already Done:
-- ✅ Firebase Authentication (login, signup, password reset)
-- ✅ Firebase Functions deployed
-- ✅ iOS app updated to use Firebase Functions
-- ✅ Python backend code ready
+---
 
-## 🔄 Next Steps:
-1. Deploy Python backend to Render.com
-2. Update Firebase Functions with backend URL
-3. Test the complete integration
-4. Add FirebaseFunctions dependency to iOS project
+## Static support site (optional)
 
-## 📱 iOS App Dependencies:
-Make sure to add `FirebaseFunctions` to your Swift Package Manager dependencies in Xcode.
+`render.yaml` in this repo can deploy a **static** service (`support.html`) named `adoreventure-support`. That is **separate** from the Python API.
+
+---
+
+## What’s already in place
+
+- Firebase Authentication, Functions (`functions/index.js`)
+- iOS app uses Firebase callable functions → Python backend URL
+- Backend code under **`backend/`** only
+
+---
+
+## iOS
+
+Ensure **`FirebaseFunctions`** is included in Swift Package Manager in Xcode.
