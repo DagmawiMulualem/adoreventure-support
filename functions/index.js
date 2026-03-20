@@ -27,14 +27,119 @@ function getOpenAIClient() {
   return _openai;
 }
 
+function isSpecialEventsCategory(category) {
+  const c = String(category || '').toLowerCase();
+  return c.includes('special');
+}
+
+function isLocalCategory(category) {
+  const c = String(category || '').toLowerCase();
+  return c.includes('local');
+}
+
+function enrichTimeHintForSpecialEvents(timeHint, category) {
+  const baseHint = String(timeHint || '').trim();
+  let categoryConstraint = '';
+
+  if (isSpecialEventsCategory(category)) {
+    categoryConstraint =
+      'Only include upcoming events from today through the next 14 days; do not include past events. Include the exact date (day and month) in the title or blurb, and prefer Eventbrite or official venue booking links when available.';
+  } else if (isLocalCategory(category)) {
+    categoryConstraint =
+      'Prioritize truly local-feeling spots: neighborhood coffee shops, VR/game places, gardens, parks, community activities, and local hangouts. Avoid tourist attractions and generic travel landmarks.';
+  }
+
+  if (!categoryConstraint) return baseHint;
+  return baseHint ? `${baseHint}. ${categoryConstraint}` : categoryConstraint;
+}
+
 exports.getIdeas = functions.https.onCall(async (data, context) => {
+  // Helper: generate ideas directly via OpenAI if Render backend is slow/unavailable
+  async function generateIdeasDirectlyViaOpenAI() {
+    const { location, category, budgetHint, timeHint, indoorOutdoor, model, previous_titles } = data;
+    const trimmedLocation = String(location).trim();
+    const trimmedCategory = String(category).trim() || 'Date Ideas';
+    const requestedModel =
+      typeof model === 'string' && model.trim() ? model.trim() : 'gpt-4o-mini';
+
+    const prevTitles = Array.isArray(previous_titles)
+      ? previous_titles
+          .slice(0, 15)
+          .map((t) => String(t).trim())
+          .filter(Boolean)
+      : [];
+
+    const systemPrompt = [
+      `You are AdoreVenture, an AI that suggests real-world ${trimmedCategory} activities.`,
+      'Return JSON with exactly 3 ideas under the key "ideas".',
+      'Each idea must have: title, blurb (1 sentence), rating (4.3–5.0), place, duration, priceRange, tags[], address (neighborhood + city or null), phone (or null), website (https URL), bookingURL (https URL).',
+      '',
+      'CONTACT & MAP SAFETY (especially lesser-known cities / emerging regions):',
+      '- NEVER invent street numbers, phone numbers, or venue domains.',
+      '- If you are NOT 100% sure of the official website, set "website" to a Google Search URL: https://www.google.com/search?q= plus URL-encoded query: "{place} {location} official website".',
+      '- If booking/reservations URL is uncertain, set "bookingURL" to a Google Search URL with query "{place} {location} reservations tickets".',
+      '- Only include phone if you are confident it is real; otherwise null.',
+      '- Prefer address as area/neighborhood + city without fake building numbers.'
+    ].join('\n');
+
+    let avoid = '';
+    if (prevTitles.length) {
+      avoid = ` Do NOT suggest: ${prevTitles.join(
+        ', '
+      )}. Suggest 3 different places (different titles).`;
+    }
+
+    const effectiveTimeHint = enrichTimeHintForSpecialEvents(timeHint, trimmedCategory);
+    const userPrompt =
+      `Give 3 ${trimmedCategory} activities in ${trimmedLocation}.` +
+      avoid +
+      (budgetHint ? ` Budget: ${budgetHint}.` : '') +
+      (effectiveTimeHint ? ` Time: ${effectiveTimeHint}.` : '') +
+      (indoorOutdoor ? ` Setting: ${indoorOutdoor}.` : '') +
+      ' Use basic admission prices only.';
+
+    const openai = getOpenAIClient();
+    const response = await openai.chat.completions.create({
+      model: requestedModel,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt }
+      ],
+      temperature: 0.7,
+      max_tokens: 350,
+      response_format: { type: 'json_object' }
+    });
+
+    const content = response.choices[0]?.message?.content || '{}';
+    let ideasData;
+    try {
+      ideasData = JSON.parse(content);
+    } catch (e) {
+      console.error('Failed to parse OpenAI JSON for getIdeas fallback:', e, content);
+      throw new functions.https.HttpsError(
+        'internal',
+        'AI returned invalid data. Please try again.'
+      );
+    }
+
+    if (!ideasData.ideas || !Array.isArray(ideasData.ideas) || ideasData.ideas.length === 0) {
+      throw new functions.https.HttpsError(
+        'internal',
+        'AI did not return any ideas. Please try again.'
+      );
+    }
+
+    return ideasData;
+  }
+
   try {
     // Verify authentication
     if (!context.auth) {
       throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
     }
 
-    const { location, category, budgetHint, timeHint, indoorOutdoor, model, userQuery } = data;
+    const { location, category, budgetHint, timeHint, indoorOutdoor, model, userQuery, previous_titles } =
+      data;
 
     // Validate required fields
     if (!location || !category) {
@@ -50,35 +155,52 @@ exports.getIdeas = functions.https.onCall(async (data, context) => {
       `Routing to Render backend for location: ${trimmedLocation}, category: ${trimmedCategory}, model: ${requestedModel}`
     );
 
-    // Call Render backend (always warm on Starter plan - no cold starts)
-    const response = await axios.post(
-      `${PYTHON_BACKEND_URL}/api/ideas`,
-      {
-        location: trimmedLocation,
-        category: trimmedCategory,
-        budgetHint: budgetHint || '',
-        timeHint: timeHint || '',
-        indoorOutdoor: indoorOutdoor || '',
-        model: requestedModel
-      },
-      {
-        timeout: 35000,
-        headers: { 'Content-Type': 'application/json' }
+    const prevTitles = Array.isArray(previous_titles) ? previous_titles.slice(0, 15) : [];
+    const effectiveTimeHint = enrichTimeHintForSpecialEvents(timeHint, trimmedCategory);
+    // Primary path: Render backend (fast when healthy)
+    try {
+      const response = await axios.post(
+        `${PYTHON_BACKEND_URL}/api/ideas`,
+        {
+          location: trimmedLocation,
+          category: trimmedCategory,
+          budgetHint: budgetHint || '',
+          timeHint: effectiveTimeHint,
+          indoorOutdoor: indoorOutdoor || '',
+          model: requestedModel,
+          previous_titles: prevTitles
+        },
+        {
+          timeout: 20000, // 20s to leave budget for fallback
+          headers: { 'Content-Type': 'application/json' }
+        }
+      );
+
+      const parsed = response.data;
+
+      if (!parsed.ideas || !Array.isArray(parsed.ideas) || parsed.ideas.length === 0) {
+        throw new Error('Render backend returned empty ideas array');
       }
-    );
 
-    const parsed = response.data;
+      console.log(`Successfully received ${parsed.ideas.length} ideas from Render backend`);
 
-    if (!parsed.ideas || !Array.isArray(parsed.ideas) || parsed.ideas.length === 0) {
-      throw new Error('Render backend returned empty ideas array');
+      // Log successful request
+      await logRequest(context.auth.uid, trimmedLocation, trimmedCategory, true);
+
+      return parsed;
+    } catch (renderError) {
+      console.error('Render backend failed for getIdeas, falling back to direct OpenAI:', renderError);
+      // If Render is slow or times out, fall back to OpenAI directly
+      const ideasData = await generateIdeasDirectlyViaOpenAI();
+      await logRequest(
+        context.auth.uid,
+        trimmedLocation,
+        trimmedCategory,
+        true,
+        'fallback-openai-success'
+      );
+      return ideasData;
     }
-
-    console.log(`Successfully received ${parsed.ideas.length} ideas from Render backend`);
-
-    // Log successful request
-    await logRequest(context.auth.uid, trimmedLocation, trimmedCategory, true);
-
-    return parsed;
   } catch (error) {
     console.error('Error in getIdeas function:', error);
 
@@ -97,7 +219,10 @@ exports.getIdeas = functions.https.onCall(async (data, context) => {
     }
 
     if (error.code === 'ECONNABORTED' || error.name === 'AbortError') {
-      throw new functions.https.HttpsError('deadline-exceeded', 'Request timed out. Please try again.');
+      throw new functions.https.HttpsError(
+        'deadline-exceeded',
+        'Request timed out. Please try again.'
+      );
     }
 
     // Re-throw HttpsErrors as-is
@@ -106,7 +231,10 @@ exports.getIdeas = functions.https.onCall(async (data, context) => {
     }
 
     // Convert other errors to HttpsError
-    throw new functions.https.HttpsError('internal', error.message || 'An unexpected error occurred');
+    throw new functions.https.HttpsError(
+      'internal',
+      error.message || 'An unexpected error occurred'
+    );
   }
 });
 
@@ -126,6 +254,7 @@ exports.getSingleIdea = functions.https.onCall(async (data, context) => {
     const idx = typeof index === 'number' ? index : 1;
     const tot = typeof total === 'number' ? total : 3;
     const prevTitles = Array.isArray(previous_titles) ? previous_titles : [];
+    const effectiveTimeHint = enrichTimeHintForSpecialEvents(timeHint, trimmedCategory);
 
     const response = await axios.post(
       `${PYTHON_BACKEND_URL}/api/idea/single`,
@@ -136,7 +265,7 @@ exports.getSingleIdea = functions.https.onCall(async (data, context) => {
         total: tot,
         previous_titles: prevTitles,
         budgetHint: budgetHint || '',
-        timeHint: timeHint || '',
+        timeHint: effectiveTimeHint,
         indoorOutdoor: indoorOutdoor || '',
         model: requestedModel
       },
@@ -1801,7 +1930,9 @@ exports.getUserAnalytics = functions.https.onCall(async (data, context) => {
   }
 });
 
-// Claim startup bonus - one device, one claim
+// Claim onboarding credits
+// First account on device: 3000 credits
+// Additional accounts on same device: 50 credits
 exports.claimStartupBonus = functions.https.onCall(async (data, context) => {
   try {
     const uid = context.auth?.uid;
@@ -1820,8 +1951,9 @@ exports.claimStartupBonus = functions.https.onCall(async (data, context) => {
     const userRef = db.collection("users").doc(uid);
     const deviceRef = db.collection("device_claims").doc(deviceHash);
 
-    const STARTUP_BONUS = 1000;
-    const FLOOR = 2; // baseline credits for new users
+    const FIRST_ACCOUNT_CREDITS = 3000;
+    const ADDITIONAL_ACCOUNT_CREDITS = 50;
+    const FLOOR = 0;
 
     return await db.runTransaction(async (tx) => {
       const [userSnap, deviceSnap] = await Promise.all([
@@ -1829,16 +1961,10 @@ exports.claimStartupBonus = functions.https.onCall(async (data, context) => {
         tx.get(deviceRef),
       ]);
 
-      // Has this device already claimed?
+      // Check whether this is the first account claim on this device
+      let grantedCredits = FIRST_ACCOUNT_CREDITS;
       if (deviceSnap.exists) {
-        const claimedBy = deviceSnap.get("claimedBy");
-        if (claimedBy && claimedBy !== uid) {
-          console.log(`Device ${deviceHash} already claimed by ${claimedBy}, rejecting claim from ${uid}`);
-          throw new functions.https.HttpsError('failed-precondition', 'This device already claimed the bonus.');
-        } else {
-          console.log(`Device ${deviceHash} already claimed by ${uid}, rejecting duplicate claim`);
-          throw new functions.https.HttpsError('already-exists', 'Bonus already claimed on this device.');
-        }
+        grantedCredits = ADDITIONAL_ACCOUNT_CREDITS;
       }
 
       // Ensure user doc exists with at least FLOOR credits
@@ -1850,29 +1976,31 @@ exports.claimStartupBonus = functions.https.onCall(async (data, context) => {
       }
 
       if (startupBonusClaimed) {
-        console.log(`User ${uid} already claimed startup bonus, rejecting claim`);
-        throw new functions.https.HttpsError('already-exists', 'User already claimed the bonus.');
+        console.log(`User ${uid} already claimed onboarding credits, returning current credits`);
+        return { credits };
       }
 
-      // Award bonus
-      const newCredits = credits + STARTUP_BONUS;
-
-      console.log(`Awarding ${STARTUP_BONUS} credits to user ${uid} (${credits} + ${STARTUP_BONUS} = ${newCredits})`);
+      // Award onboarding credits
+      const newCredits = credits + grantedCredits;
+      console.log(`Awarding ${grantedCredits} credits to user ${uid} (${credits} + ${grantedCredits} = ${newCredits})`);
 
       // Record device claim
       tx.set(deviceRef, {
         claimed: true,
-        claimedBy: uid,
+        firstClaimedBy: deviceSnap.exists ? (deviceSnap.get("firstClaimedBy") || uid) : uid,
+        lastClaimedBy: uid,
+        claimsCount: (Number(deviceSnap.get("claimsCount") || 0) || 0) + 1,
         claimedAt: admin.firestore.FieldValue.serverTimestamp(),
         deviceHash: deviceHash
-      });
+      }, { merge: true });
 
-      // Update user credits and mark bonus as claimed
+      // Update user credits and mark onboarding credits as claimed
       tx.set(userRef, {
         credits: newCredits,
         startupBonusClaimed: true,
         startupBonusClaimedAt: admin.firestore.FieldValue.serverTimestamp(),
         startupBonusPopupShown: true,
+        startupBonusAmountGranted: grantedCredits,
         lastUpdated: admin.firestore.FieldValue.serverTimestamp(),
       }, { merge: true });
 
