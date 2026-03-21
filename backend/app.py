@@ -490,6 +490,38 @@ WEBSITE & BOOKING GUIDELINES - CRITICAL SECURITY REQUIREMENTS:
 IMPORTANT: Only suggest activities that actually exist in the specified location. If the location is invalid or fictional, respond with an error message."""
 }
 
+# iOS uses AVCategory.rawValue strings; prompts use short keys. Birthday shares "special" expert profile.
+CATEGORY_PROMPTS["birthday"] = CATEGORY_PROMPTS["special"]
+
+# Exact strings from iOS `AVCategory` (Theme.swift) → backend CATEGORY_PROMPTS key
+_CLIENT_CATEGORY_ALIASES = {
+    "Date Ideas": "date",
+    "Birthday Ideas": "birthday",
+    "Travel & Tourism": "travel",
+    "Local Activities": "local",
+    "Special Events": "special",
+    "Group Activities": "group",
+}
+
+
+def resolve_idea_category(client_category) -> str | None:
+    """Map client category (display name or legacy short key) to a CATEGORY_PROMPTS key."""
+    if client_category is None:
+        return None
+    s = str(client_category).strip()
+    if not s:
+        return None
+    if s in CATEGORY_PROMPTS:
+        return s
+    if s in _CLIENT_CATEGORY_ALIASES:
+        return _CLIENT_CATEGORY_ALIASES[s]
+    lowered = s.lower()
+    for display, key in _CLIENT_CATEGORY_ALIASES.items():
+        if display.lower() == lowered:
+            return key
+    return None
+
+
 @app.route('/health', methods=['GET'])
 def health_check():
     """Health check endpoint"""
@@ -513,7 +545,7 @@ def get_ideas():
         
         # Extract parameters
         location = data.get('location', '').strip()
-        category = data.get('category', 'general')
+        category_key = resolve_idea_category(data.get('category', 'Date Ideas'))
         budget_hint = data.get('budgetHint', '').strip()
         time_hint = data.get('timeHint', '').strip()
         indoor_outdoor = data.get('indoorOutdoor', '').strip()
@@ -524,7 +556,9 @@ def get_ideas():
         previous_titles = [str(t).strip() for t in previous_titles[:15] if t]
         
         # Check cache first (skip cache when asking for different ideas via previous_titles)
-        cache_key = hashlib.md5(f"{location}_{category}_{budget_hint}_{time_hint}_{indoor_outdoor}_{model}".encode()).hexdigest()
+        cache_key = hashlib.md5(
+            f"{location}_{category_key}_{budget_hint}_{time_hint}_{indoor_outdoor}_{model}".encode()
+        ).hexdigest()
         current_time = time.time()
         
         if not previous_titles and cache_key in idea_cache:
@@ -540,8 +574,8 @@ def get_ideas():
         if not location or not is_valid_location(location):
             return jsonify({"error": "Invalid location provided"}), 400
         
-        # Validate category
-        if category not in CATEGORY_PROMPTS:
+        # Validate category (must match iOS AVCategory.rawValue or short key)
+        if not category_key:
             return jsonify({"error": "Invalid category provided"}), 400
         
         # Validate model (only allow specific models)
@@ -549,10 +583,12 @@ def get_ideas():
         if model not in allowed_models:
             model = 'gpt-4o-mini'  # Fallback to default
         
-        logger.info(f"Generating ideas for {location} with category {category} using model {model}")
+        logger.info(
+            f"Generating ideas for {location} with category_key={category_key} (client={data.get('category')!r}) model={model}"
+        )
         
         # Get category-specific system prompt
-        system_prompt = CATEGORY_PROMPTS.get(category, CATEGORY_PROMPTS['general'])
+        system_prompt = CATEGORY_PROMPTS[category_key]
         
         # Add model-specific instructions
         if model == 'gpt-4o':
@@ -581,10 +617,10 @@ RULES: 3 ideas only, real places, rating 4.3-5.0, basic prices (Free/$10-20)."""
         avoid = ""
         if previous_titles:
             avoid = f" Do NOT suggest: {', '.join(previous_titles)}. Suggest 3 different places."
-        effective_time_hint = enrich_time_hint_for_special_events(category, time_hint)
-        user_prompt = f"""Give 3 {category} activities in {location}.{avoid}{f" Budget: {budget_hint}." if budget_hint else ""}{f" Time: {effective_time_hint}." if effective_time_hint else ""}{f" Setting: {indoor_outdoor}." if indoor_outdoor else ""} Use basic admission prices only."""
+        effective_time_hint = enrich_time_hint_for_special_events(category_key, time_hint)
+        user_prompt = f"""Give 3 {category_key} activities in {location}.{avoid}{f" Budget: {budget_hint}." if budget_hint else ""}{f" Time: {effective_time_hint}." if effective_time_hint else ""}{f" Setting: {indoor_outdoor}." if indoor_outdoor else ""} Use basic admission prices only."""
 
-        logger.info(f"Generating {category} ideas for location: {location} using model: {model}")
+        logger.info(f"Generating {category_key} ideas for location: {location} using model: {model}")
 
         # Call OpenAI API with tighter token limit for speed
         response = openai.ChatCompletion.create(
@@ -623,7 +659,9 @@ RULES: 3 ideas only, real places, rating 4.3-5.0, basic prices (Free/$10-20)."""
                         idea['phone'] = None
                 enrich_idea_with_safe_links(idea, location)
 
-        logger.info(f"Successfully generated {len(ideas_data.get('ideas', []))} {category} ideas for {location} using {model}")
+        logger.info(
+            f"Successfully generated {len(ideas_data.get('ideas', []))} {category_key} ideas for {location} using {model}"
+        )
 
         # Cache the result
         idea_cache[cache_key] = (ideas_data, current_time)
@@ -651,7 +689,7 @@ def get_idea_single():
     try:
         data = request.get_json()
         location = data.get('location', '').strip()
-        category = data.get('category', 'general')
+        category_key = resolve_idea_category(data.get('category', 'Date Ideas'))
         index = data.get('index', 1)  # 1-based, 1 of 3, 2 of 3, 3 of 3
         total = data.get('total', 3)
         previous_titles = data.get('previous_titles', []) or []
@@ -662,13 +700,13 @@ def get_idea_single():
 
         if not location or not is_valid_location(location):
             return jsonify({"error": "Invalid location provided"}), 400
-        if category not in CATEGORY_PROMPTS:
+        if not category_key:
             return jsonify({"error": "Invalid category provided"}), 400
         allowed_models = ['gpt-4o-mini', 'gpt-4o', 'gpt-3.5-turbo']
         if model not in allowed_models:
             model = 'gpt-4o-mini'
 
-        system_prompt = CATEGORY_PROMPTS.get(category, CATEGORY_PROMPTS['general'])
+        system_prompt = CATEGORY_PROMPTS[category_key]
         if model == 'gpt-4o':
             system_prompt += "\n\nYou are using GPT-4o. Provide one highly detailed, creative suggestion."
         elif model == 'gpt-3.5-turbo':
@@ -693,10 +731,13 @@ RULES: 1 idea only, real place, rating 4.3-5.0, basic prices. Include bestTime, 
         if previous_titles:
             avoid = f" Do NOT suggest: {', '.join(previous_titles[:10])}. Suggest something different."
 
-        effective_time_hint = enrich_time_hint_for_special_events(category, time_hint)
-        user_prompt = f"""Give exactly 1 {category} activity in {location}. This is suggestion {index} of {total}.{avoid}{f" Budget: {budget_hint}." if budget_hint else ""}{f" Time: {effective_time_hint}." if effective_time_hint else ""}{f" Setting: {indoor_outdoor}." if indoor_outdoor else ""} Use basic admission prices only."""
+        effective_time_hint = enrich_time_hint_for_special_events(category_key, time_hint)
+        user_prompt = f"""Give exactly 1 {category_key} activity in {location}. This is suggestion {index} of {total}.{avoid}{f" Budget: {budget_hint}." if budget_hint else ""}{f" Time: {effective_time_hint}." if effective_time_hint else ""}{f" Setting: {indoor_outdoor}." if indoor_outdoor else ""} Use basic admission prices only."""
 
-        logger.info(f"Generating single idea {index}/{total} for {location} - {category} using {model}")
+        logger.info(
+            f"Generating single idea {index}/{total} for {location} - category_key={category_key} "
+            f"(client={data.get('category')!r}) using {model}"
+        )
 
         response = openai.ChatCompletion.create(
             model=model,
@@ -752,8 +793,8 @@ def test_ideas():
                 "tags": ["outdoor", "water", "sunset", "romantic"],
                 "address": "123 Harbor Drive, Washington DC",
                 "phone": "(202) 555-0123",
-                "website": null,
-                "bookingURL": null,
+                "website": None,
+                "bookingURL": None,
                 "bestTime": "Golden hour 6-8 pm",
                 "hours": ["Mon-Sun 9am-9pm"]
             }
