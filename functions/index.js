@@ -53,9 +53,153 @@ function enrichTimeHintForSpecialEvents(timeHint, category) {
   return baseHint ? `${baseHint}. ${categoryConstraint}` : categoryConstraint;
 }
 
-exports.getIdeas = functions.https.onCall(async (data, context) => {
+function hasOpenAIKeyConfigured() {
+  const k = functions.config().openai?.key || process.env.OPENAI_API_KEY;
+  return typeof k === 'string' && k.trim().length > 0;
+}
+
+/** Safe one-line summary for Cloud Logging (no secrets). */
+function summarizeAxiosError(err) {
+  if (!err) return 'unknown';
+  if (err.response) {
+    const st = err.response.status;
+    const data = err.response.data;
+    const body =
+      typeof data === 'string' ? data.slice(0, 280) : JSON.stringify(data || {}).slice(0, 280);
+    return `http_${st}:${body}`;
+  }
+  if (err.code) return `${err.code}:${err.message || String(err)}`;
+  return err.message || String(err);
+}
+
+function summarizeOpenAIError(err) {
+  if (!err) return 'unknown';
+  if (err.status) return `http_${err.status}:${err.message || ''}`;
+  if (err.code) return `${err.code}:${err.message || ''}`;
+  return err.message || String(err);
+}
+
+function aiTrace(step, details) {
+  try {
+    const payload =
+      typeof details === 'object' && details !== null ? JSON.stringify(details) : String(details);
+    console.log(`[AI_TRACE] ${step} ${payload}`);
+  } catch (e) {
+    console.log(`[AI_TRACE] ${step} (unserializable details)`);
+  }
+}
+
+// Render cold start + OpenAI can take 45–60s; 25s axios caused false timeouts → deadline-exceeded / INTERNAL.
+const RENDER_OPENAI_HTTP_MS = 60000;
+const RENDER_AXIOS_OPTS = { timeout: RENDER_OPENAI_HTTP_MS, headers: { 'Content-Type': 'application/json' } };
+const IDEA_CALL_RUNTIME = { timeoutSeconds: 120, memory: '512MB' };
+
+/**
+ * When Render /api/idea/single fails, return one idea via OpenAI (same JSON shape as Python backend).
+ */
+async function generateSingleIdeaOpenAIFallback(data) {
+  if (!hasOpenAIKeyConfigured()) {
+    aiTrace('openai_fallback_blocked', { reason: 'missing_openai_key', hint: 'set openai.key in firebase functions:config' });
+    throw new functions.https.HttpsError(
+      'failed-precondition',
+      'OpenAI fallback is not configured on the server (missing API key).'
+    );
+  }
+
+  const trimmedLocation = String(data.location || '').trim();
+  const trimmedCategory = String(data.category || '').trim() || 'Date Ideas';
+  const requestedModel =
+    typeof data.model === 'string' && data.model.trim() ? data.model.trim() : 'gpt-4o-mini';
+  const idx = typeof data.index === 'number' ? data.index : 1;
+  const tot = typeof data.total === 'number' ? data.total : 3;
+  const prevTitles = Array.isArray(data.previous_titles)
+    ? data.previous_titles
+        .slice(0, 15)
+        .map((t) => String(t).trim())
+        .filter(Boolean)
+    : [];
+  const budgetHint = data.budgetHint || '';
+  const timeHint = enrichTimeHintForSpecialEvents(data.timeHint, trimmedCategory);
+  const indoorOutdoor = data.indoorOutdoor || '';
+
+  const systemPrompt = [
+    `You are AdoreVenture, an AI that suggests real-world ${trimmedCategory} activities.`,
+    'Return JSON with exactly 1 idea under the key "ideas" (array with one object).',
+    'Each idea must have: title, blurb (1 sentence), rating (4.3–5.0), place, duration, priceRange, tags[], address (neighborhood + city or null), phone (or null), website (https URL), bookingURL (https URL), bestTime, hours (array of strings).',
+    '',
+    'CONTACT & MAP SAFETY (especially lesser-known cities):',
+    '- NEVER invent fake street numbers or phone numbers.',
+    '- If unsure of official website, use a Google Search URL with query "{place} {location} official website".',
+    '- If booking URL uncertain, use Google Search with "{place} {location} reservations tickets".'
+  ].join('\n');
+
+  let avoid = '';
+  if (prevTitles.length) {
+    avoid = ` Do NOT suggest: ${prevTitles.join(', ')}. Suggest something different.`;
+  }
+
+  const userPrompt =
+    `Give exactly 1 ${trimmedCategory} activity in ${trimmedLocation}. This is suggestion ${idx} of ${tot}.` +
+    avoid +
+    (budgetHint ? ` Budget: ${budgetHint}.` : '') +
+    (timeHint ? ` Time: ${timeHint}.` : '') +
+    (indoorOutdoor ? ` Setting: ${indoorOutdoor}.` : '') +
+    ' Use basic admission prices only.';
+
+  const openai = getOpenAIClient();
+  let response;
+  try {
+    response = await openai.chat.completions.create({
+      model: requestedModel,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt }
+      ],
+      temperature: 0.7,
+      max_tokens: 500,
+      response_format: { type: 'json_object' }
+    });
+  } catch (e) {
+    aiTrace('openai_chat_exception', { model: requestedModel, err: summarizeOpenAIError(e) });
+    throw new functions.https.HttpsError(
+      'internal',
+      'OpenAI request failed. Check Firebase logs [AI_TRACE] openai_chat_exception.'
+    );
+  }
+
+  const content = response.choices[0]?.message?.content || '{}';
+  let ideasData;
+  try {
+    ideasData = JSON.parse(content);
+  } catch (e) {
+    aiTrace('openai_json_parse_failed', {
+      err: String(e && e.message ? e.message : e),
+      contentHead: String(content).slice(0, 400)
+    });
+    throw new functions.https.HttpsError('internal', 'AI returned invalid data. Please try again.');
+  }
+
+  if (!ideasData.ideas || !Array.isArray(ideasData.ideas) || ideasData.ideas.length === 0) {
+    aiTrace('openai_empty_ideas_array', { keys: ideasData && typeof ideasData === 'object' ? Object.keys(ideasData) : [] });
+    throw new functions.https.HttpsError('internal', 'AI did not return an idea. Please try again.');
+  }
+
+  return { ideas: [ideasData.ideas[0]] };
+}
+
+exports.getIdeas = functions.runWith(IDEA_CALL_RUNTIME).https.onCall(async (data, context) => {
+  const reqId = `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+
   // Helper: generate ideas directly via OpenAI if Render backend is slow/unavailable
   async function generateIdeasDirectlyViaOpenAI() {
+    if (!hasOpenAIKeyConfigured()) {
+      aiTrace('getIdeas_openai_blocked', { reqId, reason: 'missing_openai_key' });
+      throw new functions.https.HttpsError(
+        'failed-precondition',
+        'OpenAI fallback is not configured on the server (missing API key).'
+      );
+    }
+
     const { location, category, budgetHint, timeHint, indoorOutdoor, model, previous_titles } = data;
     const trimmedLocation = String(location).trim();
     const trimmedCategory = String(category).trim() || 'Date Ideas';
@@ -99,23 +243,36 @@ exports.getIdeas = functions.https.onCall(async (data, context) => {
       ' Use basic admission prices only.';
 
     const openai = getOpenAIClient();
-    const response = await openai.chat.completions.create({
-      model: requestedModel,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt }
-      ],
-      temperature: 0.7,
-      max_tokens: 350,
-      response_format: { type: 'json_object' }
-    });
+    let response;
+    try {
+      response = await openai.chat.completions.create({
+        model: requestedModel,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt }
+        ],
+        temperature: 0.7,
+        max_tokens: 350,
+        response_format: { type: 'json_object' }
+      });
+    } catch (e) {
+      aiTrace('getIdeas_openai_chat_exception', { reqId, err: summarizeOpenAIError(e) });
+      throw new functions.https.HttpsError(
+        'internal',
+        'OpenAI request failed. Check Firebase logs [AI_TRACE] getIdeas_openai_chat_exception.'
+      );
+    }
 
     const content = response.choices[0]?.message?.content || '{}';
     let ideasData;
     try {
       ideasData = JSON.parse(content);
     } catch (e) {
-      console.error('Failed to parse OpenAI JSON for getIdeas fallback:', e, content);
+      aiTrace('getIdeas_openai_json_parse_failed', {
+        reqId,
+        err: String(e && e.message ? e.message : e),
+        contentHead: String(content).slice(0, 400)
+      });
       throw new functions.https.HttpsError(
         'internal',
         'AI returned invalid data. Please try again.'
@@ -123,6 +280,10 @@ exports.getIdeas = functions.https.onCall(async (data, context) => {
     }
 
     if (!ideasData.ideas || !Array.isArray(ideasData.ideas) || ideasData.ideas.length === 0) {
+      aiTrace('getIdeas_openai_empty_ideas', {
+        reqId,
+        keys: ideasData && typeof ideasData === 'object' ? Object.keys(ideasData) : []
+      });
       throw new functions.https.HttpsError(
         'internal',
         'AI did not return any ideas. Please try again.'
@@ -151,13 +312,19 @@ exports.getIdeas = functions.https.onCall(async (data, context) => {
     const requestedModel =
       typeof model === 'string' && model.trim() ? model.trim() : 'gpt-4o-mini';
 
-    console.log(
-      `Routing to Render backend for location: ${trimmedLocation}, category: ${trimmedCategory}, model: ${requestedModel}`
-    );
+    aiTrace('getIdeas_start', {
+      reqId,
+      uid: context.auth.uid.slice(0, 8),
+      location: trimmedLocation.slice(0, 80),
+      category: trimmedCategory,
+      model: requestedModel,
+      backendHost: String(PYTHON_BACKEND_URL).replace(/^https?:\/\//, '').split('/')[0]
+    });
 
     const prevTitles = Array.isArray(previous_titles) ? previous_titles.slice(0, 15) : [];
     const effectiveTimeHint = enrichTimeHintForSpecialEvents(timeHint, trimmedCategory);
     // Primary path: Render backend (fast when healthy)
+    const tRender = Date.now();
     try {
       const response = await axios.post(
         `${PYTHON_BACKEND_URL}/api/ideas`,
@@ -170,10 +337,7 @@ exports.getIdeas = functions.https.onCall(async (data, context) => {
           model: requestedModel,
           previous_titles: prevTitles
         },
-        {
-          timeout: 20000, // 20s to leave budget for fallback
-          headers: { 'Content-Type': 'application/json' }
-        }
+        RENDER_AXIOS_OPTS
       );
 
       const parsed = response.data;
@@ -182,26 +346,50 @@ exports.getIdeas = functions.https.onCall(async (data, context) => {
         throw new Error('Render backend returned empty ideas array');
       }
 
-      console.log(`Successfully received ${parsed.ideas.length} ideas from Render backend`);
+      aiTrace('getIdeas_render_ok', {
+        reqId,
+        ms: Date.now() - tRender,
+        count: parsed.ideas.length
+      });
 
       // Log successful request
       await logRequest(context.auth.uid, trimmedLocation, trimmedCategory, true);
 
       return parsed;
     } catch (renderError) {
-      console.error('Render backend failed for getIdeas, falling back to direct OpenAI:', renderError);
-      // If Render is slow or times out, fall back to OpenAI directly
-      const ideasData = await generateIdeasDirectlyViaOpenAI();
-      await logRequest(
-        context.auth.uid,
-        trimmedLocation,
-        trimmedCategory,
-        true,
-        'fallback-openai-success'
-      );
-      return ideasData;
+      aiTrace('getIdeas_render_fail', {
+        reqId,
+        ms: Date.now() - tRender,
+        err: summarizeAxiosError(renderError)
+      });
+      const tFb = Date.now();
+      try {
+        const ideasData = await generateIdeasDirectlyViaOpenAI();
+        aiTrace('getIdeas_openai_fallback_ok', { reqId, ms: Date.now() - tFb });
+        await logRequest(
+          context.auth.uid,
+          trimmedLocation,
+          trimmedCategory,
+          true,
+          'fallback-openai-success'
+        );
+        return ideasData;
+      } catch (fallbackErr) {
+        aiTrace('getIdeas_openai_fallback_fail', {
+          reqId,
+          ms: Date.now() - tFb,
+          err: fallbackErr.message || String(fallbackErr)
+        });
+        throw fallbackErr;
+      }
     }
   } catch (error) {
+    aiTrace('getIdeas_fatal', {
+      reqId,
+      err: error.message || String(error),
+      code: error.code,
+      isHttps: error instanceof functions.https.HttpsError
+    });
     console.error('Error in getIdeas function:', error);
 
     // Log failed request (best-effort)
@@ -239,7 +427,8 @@ exports.getIdeas = functions.https.onCall(async (data, context) => {
 });
 
 // Single idea for streaming (client calls 3 times; log request only after all 3)
-exports.getSingleIdea = functions.https.onCall(async (data, context) => {
+exports.getSingleIdea = functions.runWith(IDEA_CALL_RUNTIME).https.onCall(async (data, context) => {
+  const reqId = `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
   try {
     if (!context.auth) {
       throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
@@ -256,29 +445,83 @@ exports.getSingleIdea = functions.https.onCall(async (data, context) => {
     const prevTitles = Array.isArray(previous_titles) ? previous_titles : [];
     const effectiveTimeHint = enrichTimeHintForSpecialEvents(timeHint, trimmedCategory);
 
-    const response = await axios.post(
-      `${PYTHON_BACKEND_URL}/api/idea/single`,
-      {
-        location: trimmedLocation,
-        category: trimmedCategory,
-        index: idx,
-        total: tot,
-        previous_titles: prevTitles,
-        budgetHint: budgetHint || '',
-        timeHint: effectiveTimeHint,
-        indoorOutdoor: indoorOutdoor || '',
-        model: requestedModel
-      },
-      { timeout: 25000, headers: { 'Content-Type': 'application/json' } }
-    );
+    aiTrace('getSingleIdea_start', {
+      reqId,
+      uid: context.auth.uid.slice(0, 8),
+      idx,
+      tot,
+      location: trimmedLocation.slice(0, 80),
+      category: trimmedCategory,
+      model: requestedModel,
+      backendHost: String(PYTHON_BACKEND_URL).replace(/^https?:\/\//, '').split('/')[0]
+    });
 
-    const parsed = response.data;
-    if (!parsed.ideas || !Array.isArray(parsed.ideas) || parsed.ideas.length === 0) {
-      throw new Error('Backend returned no idea');
+    const tRender = Date.now();
+    try {
+      const response = await axios.post(
+        `${PYTHON_BACKEND_URL}/api/idea/single`,
+        {
+          location: trimmedLocation,
+          category: trimmedCategory,
+          index: idx,
+          total: tot,
+          previous_titles: prevTitles,
+          budgetHint: budgetHint || '',
+          timeHint: effectiveTimeHint,
+          indoorOutdoor: indoorOutdoor || '',
+          model: requestedModel
+        },
+        RENDER_AXIOS_OPTS
+      );
+
+      const parsed = response.data;
+      if (!parsed.ideas || !Array.isArray(parsed.ideas) || parsed.ideas.length === 0) {
+        throw new Error('Backend returned no idea');
+      }
+      aiTrace('getSingleIdea_render_ok', {
+        reqId,
+        ms: Date.now() - tRender,
+        count: parsed.ideas.length
+      });
+      return parsed;
+    } catch (renderError) {
+      aiTrace('getSingleIdea_render_fail', {
+        reqId,
+        ms: Date.now() - tRender,
+        err: summarizeAxiosError(renderError)
+      });
+      const tFb = Date.now();
+      try {
+        const out = await generateSingleIdeaOpenAIFallback({
+          location: trimmedLocation,
+          category: trimmedCategory,
+          index: idx,
+          total: tot,
+          previous_titles: prevTitles,
+          budgetHint: budgetHint || '',
+          timeHint: timeHint,
+          indoorOutdoor: indoorOutdoor || '',
+          model: requestedModel
+        });
+        aiTrace('getSingleIdea_openai_ok', { reqId, ms: Date.now() - tFb });
+        return out;
+      } catch (fallbackErr) {
+        aiTrace('getSingleIdea_openai_fail', {
+          reqId,
+          ms: Date.now() - tFb,
+          err: fallbackErr.message || String(fallbackErr),
+          isHttps: fallbackErr instanceof functions.https.HttpsError
+        });
+        throw fallbackErr;
+      }
     }
-    return parsed;
   } catch (error) {
-    console.error('Error in getSingleIdea:', error);
+    aiTrace('getSingleIdea_fatal', {
+      reqId,
+      err: error.message || String(error),
+      code: error.code,
+      isHttps: error instanceof functions.https.HttpsError
+    });
     if (error.code === 'ECONNABORTED' || error.name === 'AbortError') {
       throw new functions.https.HttpsError('deadline-exceeded', 'Request timed out.');
     }
