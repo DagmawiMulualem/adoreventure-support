@@ -284,6 +284,34 @@ QUALITY RULES:
 - Focus on experiences that feel slightly elevated, thoughtful, or memorable
 - Ensure variety across all suggestions (do not repeat similar formats)
 
+ACTIVITY DIVERSITY REQUIREMENT:
+- You MUST include a mix of active, interactive, and experience-based date ideas, not just passive locations like restaurants, museums, or parks
+- Prioritize activities that involve doing something together, such as:
+  * Roller skating or ice skating rinks
+  * Boat rides, paddle boats, kayaking, or waterfront rentals (if available)
+  * Horseback riding or scenic rides (if regionally available)
+  * Bowling alleys, arcades, or game lounges
+  * Mini golf, fun centers, or amusement-style activities
+  * Live classes (cooking, painting, dance, pottery)
+  * Cultural or locally unique experiences specific to the city or country
+
+BALANCE REQUIREMENT:
+- Include a natural mix of date ideas, combining both interactive activities and more relaxed experiences
+- Interactive or activity-based ideas should appear regularly, but should NOT be forced if they do not fit the location or context
+- Maintain variety across suggestions, ensuring the list does not feel repetitive or overly focused on one type of experience
+
+LOCAL CULTURE INTEGRATION:
+- When possible, include experiences that are UNIQUE to the location’s culture, lifestyle, or environment
+  (e.g., boat rides in waterfront cities, desert tours in desert regions, local festivals, traditional performances)
+
+TARGET AUDIENCE FLEXIBILITY:
+- Include a mix of:
+  * Romantic and intimate experiences
+  * Fun, playful, or slightly adventurous activities (suitable for younger couples or active personalities)
+
+IMPORTANT:
+- Avoid overusing museums, gardens, and standard dining unless they are highly unique or paired with an experience
+
 LOCATION ACCURACY:
 - Only suggest activities that realistically exist in the given location
 - Do not include fictional businesses, fake venues, or unverifiable locations
