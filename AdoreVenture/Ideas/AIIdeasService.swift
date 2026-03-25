@@ -6,19 +6,41 @@
 //
 
 import Foundation
-import FirebaseFunctions
+import FirebaseAuth
 #if canImport(UIKit)
 import UIKit
 #endif
 
-/// One in-flight `getSingleIdea` at a time avoids GTMSessionFetcher "was already running" when retries or other code overlap.
-private actor GetSingleIdeaSerialization {
-    static let shared = GetSingleIdeaSerialization()
-    func callAndGetData(_ payload: [String: Any]) async throws -> Any? {
-        let functions = Functions.functions()
-        let result = try await functions.httpsCallable("getSingleIdea").call(payload)
-        try? await Task.sleep(nanoseconds: 120_000_000)
-        return result.data
+/// Firebase ID token for `Authorization: Bearer` on idea callables. Must run on the main actor, **inside**
+/// `FirebaseHTTPSCallableGate` so it does not overlap other SDK HTTPS traffic on shared `GTMSessionFetcher`.
+@MainActor
+private func firebaseIDTokenForCallables(forcingRefresh: Bool) async throws -> String {
+    guard let user = Auth.auth().currentUser else {
+        throw NSError(
+            domain: "AIIdeasService",
+            code: -9,
+            userInfo: [NSLocalizedDescriptionKey: "You must be signed in to search."]
+        )
+    }
+    return try await user.getIDToken(forcingRefresh: forcingRefresh)
+}
+
+/// Gen2 idea endpoints use the HTTPS callable protocol over `URLSession` (see `FirebaseIdeasCallableREST.swift`)
+/// so we never use `HTTPSCallable` / GTMSessionFetcher for these — that stack overlaps with Auth and other
+/// callables and produced persistent `UNAUTHENTICATED` (16) after switching ideas to Gen2.
+private func callGetSingleIdeaCallable(
+    payload: [String: Any],
+    forcingRefresh: Bool,
+    timeoutSeconds: TimeInterval
+) async throws -> Any? {
+    try await FirebaseHTTPSCallableGate.shared.performCallableDataOnMainActor {
+        let token = try await firebaseIDTokenForCallables(forcingRefresh: forcingRefresh)
+        return try await FirebaseIdeasCallableREST.invoke(
+            functionName: "getSingleIdea",
+            data: payload,
+            bearerToken: token,
+            timeoutSeconds: timeoutSeconds
+        )
     }
 }
 
@@ -217,37 +239,12 @@ class AIIdeasService: ObservableObject {
         Self.isFetching = true
         defer { Self.isFetching = false }
         
-        // Client-side timeout guard (in addition to Cloud Function timeout)
-        var finalIdeas: [AVIdea]?
-        
-        try await withThrowingTaskGroup(of: Void.self) { group in
-            // Actual AI call
-            group.addTask { [self] in
-                let ideas = try await self.performNetworkFetchIdeas(
-                    location: location,
-                    category: category,
-                    data: data
-                )
-                finalIdeas = ideas
-            }
-            
-            // Timeout task — must match `timeoutInterval` (Render + OpenAI can be slow on cold start)
-            group.addTask { [timeoutInterval] in
-                try await Task.sleep(nanoseconds: UInt64(timeoutInterval * 1_000_000_000))
-                throw URLError(.timedOut)
-            }
-            
-            // Wait for the first task to complete or throw
-            _ = try await group.next()
-            group.cancelAll()
-        }
-        
-        if let finalIdeas {
-            return finalIdeas
-        }
-        
-        throw NSError(domain: "AIIdeasService", code: -11,
-                      userInfo: [NSLocalizedDescriptionKey: "AI request cancelled or timed out. Please try again."])
+        // Rely on HTTPSCallable.timeoutInterval (parallel TaskGroup + cancelAll breaks GTMSessionFetcher / Callable auth)
+        return try await performNetworkFetchIdeas(
+            location: location,
+            category: category,
+            data: data
+        )
     }
     
     /// Fetch ideas one at a time; call onIdea for each as it arrives (true streaming).
@@ -379,10 +376,17 @@ class AIIdeasService: ObservableObject {
             do {
                 print("🤖 AI Service: Attempt \(attempt)/\(maxRetries)")
                 
-                let functions = Functions.functions()
-                let result = try await functions.httpsCallable("getIdeas").call(data)
+                let raw = try await FirebaseHTTPSCallableGate.shared.performCallableDataOnMainActor { [self] in
+                    let token = try await firebaseIDTokenForCallables(forcingRefresh: attempt > 1)
+                    return try await FirebaseIdeasCallableREST.invoke(
+                        functionName: "getIdeas",
+                        data: data,
+                        bearerToken: token,
+                        timeoutSeconds: self.timeoutInterval
+                    )
+                }
                 
-                guard let resultData = result.data as? [String: Any],
+                guard let resultData = raw as? [String: Any],
                       let ideasData = resultData["ideas"] as? [[String: Any]] else {
                     throw NSError(domain: "AIIdeasService", code: -6,
                                   userInfo: [NSLocalizedDescriptionKey: "Invalid response format from Firebase Function"])
@@ -427,7 +431,7 @@ class AIIdeasService: ObservableObject {
                 logCallableNSError(err, label: "getIdeas")
                 
                 let isRetryable = attempt < maxRetries && (
-                    err.domain == "com.firebase.functions" && (err.code == 13 || err.code == 4) || // INTERNAL or deadline-exceeded
+                    err.domain == "com.firebase.functions" && (err.code == 13 || err.code == 4 || err.code == 16) || // INTERNAL, deadline, UNAUTHENTICATED (stale token)
                     err.domain == NSURLErrorDomain && err.code == -1001 // timeout
                 )
                 if isRetryable {
@@ -480,7 +484,8 @@ class AIIdeasService: ObservableObject {
                     budgetHint: budgetHint,
                     timeHint: timeHint,
                     indoorOutdoor: indoorOutdoor,
-                    model: model
+                    model: model,
+                    forcingRefresh: attempt > 1 || (index == 1 && attempt == 1)
                 )
             } catch {
                 lastError = error
@@ -492,7 +497,7 @@ class AIIdeasService: ObservableObject {
                 print("🤖 AI Service: ❌ Single idea attempt \(attempt) failed: \(error.localizedDescription)")
                 print("🤖 AI Service: Single idea error domain/code: \(nsError.domain)/\(nsError.code)")
                 logCallableNSError(nsError, label: "getSingleIdea")
-                let shouldRetry = attempt < maxRetries && isRetryableNetworkError(error)
+                let shouldRetry = attempt < maxRetries && isRetryableSingleIdeaError(error)
                 if shouldRetry {
                     // Longer backoff for INTERNAL (13) — Render/backend cold starts
                     let base = (nsError.domain == "com.firebase.functions" && nsError.code == 13) ? 1.5 : 1.0
@@ -522,36 +527,21 @@ class AIIdeasService: ObservableObject {
         budgetHint: String?,
         timeHint: String?,
         indoorOutdoor: String?,
-        model: String
+        model: String,
+        forcingRefresh: Bool
     ) async throws -> AVIdea {
-        try await withThrowingTaskGroup(of: AVIdea.self) { group in
-            group.addTask { [self] in
-                try await self.performNetworkFetchSingleIdea(
-                    location: location,
-                    category: category,
-                    index: index,
-                    total: total,
-                    previousTitles: previousTitles,
-                    budgetHint: budgetHint,
-                    timeHint: timeHint,
-                    indoorOutdoor: indoorOutdoor,
-                    model: model
-                )
-            }
-
-            group.addTask { [singleIdeaTimeoutInterval] in
-                try await Task.sleep(nanoseconds: UInt64(singleIdeaTimeoutInterval * 1_000_000_000))
-                throw URLError(.timedOut)
-            }
-
-            guard let first = try await group.next() else {
-                throw URLError(.unknown)
-            }
-            group.cancelAll()
-            // Pause so GTMSessionFetcher can finish tearing down before the next getSingleIdea call (avoids "was already running").
-            try? await Task.sleep(nanoseconds: 200_000_000)
-            return first
-        }
+        try await performNetworkFetchSingleIdea(
+            location: location,
+            category: category,
+            index: index,
+            total: total,
+            previousTitles: previousTitles,
+            budgetHint: budgetHint,
+            timeHint: timeHint,
+            indoorOutdoor: indoorOutdoor,
+            model: model,
+            forcingRefresh: forcingRefresh
+        )
     }
 
     private func performNetworkFetchSingleIdea(
@@ -563,7 +553,8 @@ class AIIdeasService: ObservableObject {
         budgetHint: String?,
         timeHint: String?,
         indoorOutdoor: String?,
-        model: String
+        model: String,
+        forcingRefresh: Bool
     ) async throws -> AVIdea {
         let data: [String: Any] = [
             "location": location,
@@ -576,7 +567,11 @@ class AIIdeasService: ObservableObject {
             "indoorOutdoor": indoorOutdoor ?? "",
             "model": model
         ]
-        let raw = try await GetSingleIdeaSerialization.shared.callAndGetData(data)
+        let raw = try await callGetSingleIdeaCallable(
+            payload: data,
+            forcingRefresh: forcingRefresh,
+            timeoutSeconds: singleIdeaTimeoutInterval
+        )
         guard let resultData = raw as? [String: Any],
               let ideasData = resultData["ideas"] as? [[String: Any]],
               let first = ideasData.first else {
@@ -668,6 +663,15 @@ class AIIdeasService: ObservableObject {
         (err.domain == NSURLErrorDomain && err.code == -1001) ||
         error.localizedDescription.lowercased().contains("timeout") ||
         error.localizedDescription.lowercased().contains("deadline")
+    }
+
+    /// Includes UNAUTHENTICATED (16): next attempt uses `getIDToken(forcingRefresh: true)` before the callable.
+    private func isRetryableSingleIdeaError(_ error: Error) -> Bool {
+        let err = error as NSError
+        if err.domain == "com.firebase.functions" && (err.code == 13 || err.code == 4 || err.code == 16) {
+            return true
+        }
+        return isRetryableNetworkError(error)
     }
 
     private func normalizedTimeHint(for category: AVCategory, requestedTimeHint: String?) -> String {

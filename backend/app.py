@@ -176,19 +176,25 @@ def is_valid_location(location):
     
     return True
 
-def enrich_time_hint_for_special_events(category, time_hint):
-    """Add category-specific constraints to keep ideas aligned with UX."""
+def enrich_time_hint_for_special_events(
+    category, time_hint, has_user_preferences: bool = False
+):
+    """Add category-specific constraints to keep ideas aligned with UX.
+
+    When `has_user_preferences` is True (vibes from Preferences), skip the *local* constraint
+    that mentions parks/gardens — it conflicts with STRICT user preference lines (e.g. dining-only).
+    """
     base_hint = (time_hint or "").strip()
     c = str(category).lower()
 
     category_constraint = ""
-    if c == "special":
+    if c == "special" and not has_user_preferences:
         category_constraint = (
             "Only include upcoming events from today through the next 14 days and do not include past events. "
             "Include the exact event date (day and month) in each idea title or blurb, "
             "and prefer Eventbrite or official venue booking links when available."
         )
-    elif c == "local":
+    elif c == "local" and not has_user_preferences:
         category_constraint = (
             "Prioritize truly local-feeling spots and activities like neighborhood coffee shops, "
             "VR or game places, gardens, parks, and community hangouts. "
@@ -198,6 +204,25 @@ def enrich_time_hint_for_special_events(category, time_hint):
     if not category_constraint:
         return base_hint
     return f"{base_hint}. {category_constraint}" if base_hint else category_constraint
+
+
+def format_user_preference_clause(indoor_outdoor: str) -> str:
+    """
+    Vibes from the app are sent in `indoorOutdoor` (legacy field name). They must override
+    broad 'diversity' rules in system prompts (e.g. Date Ideas asking for parks + skating).
+    """
+    s = (indoor_outdoor or "").strip()
+    if not s:
+        return ""
+    return (
+        f" User preferences (STRICT — every suggestion must match): {s}."
+        " Apply together with this request's category (e.g. Date Ideas vs Travel): preferences narrow the activity type;"
+        " the category still defines who it is for (couples, travelers, groups, etc.)."
+        " These override any generic variety or activity-mix rules in your instructions."
+        " Do not suggest unrelated vibe types (e.g. standalone parks or gardens when the user asked only for dining"
+        " unless the primary experience is food or drink there)."
+    )
+
 
 # Category-specific system prompts
 CATEGORY_PROMPTS = {
@@ -284,9 +309,10 @@ QUALITY RULES:
 - Focus on experiences that feel slightly elevated, thoughtful, or memorable
 - Ensure variety across all suggestions (do not repeat similar formats)
 
-ACTIVITY DIVERSITY REQUIREMENT:
-- You MUST include a mix of active, interactive, and experience-based date ideas, not just passive locations like restaurants, museums, or parks
-- Prioritize activities that involve doing something together, such as:
+ACTIVITY DIVERSITY REQUIREMENT (default when the user did NOT send STRICT preferences):
+- Aim for a mix across the 3 ideas: include some active or interactive options when it fits the location, not only passive venues
+- If the user message includes "User preferences (STRICT", skip this diversity rule and follow their vibe only
+- When diversity applies, good examples include:
   * Roller skating or ice skating rinks
   * Boat rides, paddle boats, kayaking, or waterfront rentals (if available)
   * Horseback riding or scenic rides (if regionally available)
@@ -295,10 +321,10 @@ ACTIVITY DIVERSITY REQUIREMENT:
   * Live classes (cooking, painting, dance, pottery)
   * Cultural or locally unique experiences specific to the city or country
 
-BALANCE REQUIREMENT:
-- Include a natural mix of date ideas, combining both interactive activities and more relaxed experiences
+BALANCE REQUIREMENT (default when STRICT user preferences are absent):
+- Include a natural mix across the 3 ideas when it fits the location; skip forced mixing when STRICT preferences narrow the vibe
 - Interactive or activity-based ideas should appear regularly, but should NOT be forced if they do not fit the location or context
-- Maintain variety across suggestions, ensuring the list does not feel repetitive or overly focused on one type of experience
+- Avoid three near-duplicate ideas unless STRICT preferences ask for one narrow theme
 
 LOCAL CULTURE INTEGRATION:
 - When possible, include experiences that are UNIQUE to the location’s culture, lifestyle, or environment
@@ -310,7 +336,8 @@ TARGET AUDIENCE FLEXIBILITY:
   * Fun, playful, or slightly adventurous activities (suitable for younger couples or active personalities)
 
 IMPORTANT:
-- Avoid overusing museums, gardens, and standard dining unless they are highly unique or paired with an experience
+- Avoid repeating the same format for all three ideas (e.g. three similar museums) unless the user’s STRICT preferences ask for one vibe only
+- Museums, gardens, and dining are fine when they match user preferences or add clear variety
 
 LOCATION ACCURACY:
 - Only suggest activities that realistically exist in the given location
@@ -323,13 +350,11 @@ VERY IMPORTANT CATEGORY RULES:
 - If an idea could fit multiple categories, shape it specifically as a couple-focused experience (e.g. "romantic dinner", "date night", "sunset walk for two")
 
 PRICING GUIDELINES:
-- Provide BASIC ADMISSION/ENTRY costs only, not performance or special event prices
+- Give a simple, realistic priceRange: typical entry, meal per person, or common ticket tier (not VIP upsells unless the idea is explicitly premium)
 - For free venues (museums, centers, parks): Use "Free" or "$0"
-- For paid venues: Use admission price like "$15 per person" or "$10-20 per person"
+- For paid venues: Use admission like "$15 per person" or a clear range
 - For restaurants: Use typical meal costs
-- For activities: Use basic activity cost, not premium packages
-- Do NOT include performance tickets, special events, or premium experiences
-- Focus on what it costs to visit/enter the place, not what you can do there
+- For shows or cinema dates: use general-admission style pricing in priceRange
 
 HOURS GUIDELINES:
 - Provide accurate, current operating hours
@@ -357,7 +382,11 @@ WEBSITE & BOOKING GUIDELINES - CRITICAL SECURITY REQUIREMENTS:
 
 FINAL REQUIREMENT:
 - Only suggest activities that actually exist in the specified location
-- If the location is invalid or fictional, respond with an error message""",
+- If the location is invalid or fictional, respond with an error message
+
+USER PREFERENCE OVERRIDE:
+- If the user message includes "User preferences (STRICT", treat that block as mandatory for every idea.
+- It overrides ACTIVITY DIVERSITY and BALANCE rules above when they conflict (e.g. dining-only means food/drink venues, not parks or gardens as the main date).""",
 
     "travel": """You are a specialized Travel Activities Expert. You generate exciting travel experiences and adventures for tourists and travelers.
 
@@ -414,7 +443,11 @@ WEBSITE & BOOKING GUIDELINES - CRITICAL SECURITY REQUIREMENTS:
 - If a business doesn't have a website, that's perfectly fine - use null
 - NEVER create or suggest fake URLs - this is a security requirement
 
-IMPORTANT: Only suggest activities that actually exist in the specified location. If the location is invalid or fictional, respond with an error message.""",
+IMPORTANT: Only suggest activities that actually exist in the specified location. If the location is invalid or fictional, respond with an error message.
+
+USER PREFERENCE OVERRIDE:
+- If the user message includes "User preferences (STRICT", treat that block as mandatory for every idea.
+- It overrides generic variety or "cater to different interests" rules when they conflict (e.g. user asked only for dining/cultural/outdoor).""",
 
     "local": """You are a specialized Local Activities Expert. You generate engaging activities for residents and locals to enjoy their own city.
 
@@ -471,7 +504,11 @@ WEBSITE & BOOKING GUIDELINES - CRITICAL SECURITY REQUIREMENTS:
 - If a business doesn't have a website, that's perfectly fine - use null
 - NEVER create or suggest fake URLs - this is a security requirement
 
-IMPORTANT: Only suggest activities that actually exist in the specified location. If the location is invalid or fictional, respond with an error message.""",
+IMPORTANT: Only suggest activities that actually exist in the specified location. If the location is invalid or fictional, respond with an error message.
+
+USER PREFERENCE OVERRIDE:
+- If the user message includes "User preferences (STRICT", treat that block as mandatory for every idea.
+- It overrides generic "appeal to different age groups" or broad variety when they conflict with the user's vibe (still keep each idea appropriate for the category: local resident activities).""",
 
     "special": """You are a specialized Special Events Expert. You generate unique and memorable experiences for celebrations and special occasions.
 
@@ -497,13 +534,11 @@ VERY IMPORTANT CATEGORY RULES:
 - Avoid everyday date nights or casual local activities unless they are clearly upgraded into a “special occasion” format (e.g. private dining for an anniversary).
 
 PRICING GUIDELINES:
-- Provide BASIC ADMISSION/ENTRY costs only, not performance or special event prices
-- For free venues (museums, centers, parks): Use "Free" or "$0"
-- For paid venues: Use admission price like "$15 per person" or "$10-20 per person"
-- For restaurants: Use typical meal costs
-- For activities: Use basic activity cost, not premium packages
-- Do NOT include performance tickets, special events, or premium experiences
-- Focus on what it costs to visit/enter the place, not what you can do there
+- Give a simple, realistic priceRange for the main way someone attends (entry, typical meal, or typical ticket tier)
+- For free venues: "Free" or "$0"
+- For ticketed shows or timed events: use a typical general-admission or common tier (avoid quoting VIP packages unless the idea is explicitly VIP)
+- For restaurants: typical meal cost per person
+- Focus on what it costs to do the activity, not every optional add-on
 
 HOURS GUIDELINES:
 - Provide accurate, current operating hours
@@ -529,7 +564,60 @@ WEBSITE & BOOKING GUIDELINES - CRITICAL SECURITY REQUIREMENTS:
 - If a business doesn't have a website, that's perfectly fine - use null
 - NEVER create or suggest fake URLs - this is a security requirement
 
-IMPORTANT: Only suggest activities that actually exist in the specified location. If the location is invalid or fictional, respond with an error message.""",
+IMPORTANT: Only suggest activities that actually exist in the specified location. If the location is invalid or fictional, respond with an error message.
+
+USER PREFERENCE OVERRIDE:
+- If the user message includes "User preferences (STRICT", treat that block as mandatory for every idea.
+- It overrides instructions that push unrelated variety when they conflict (e.g. user asked only for cultural or dining — still tie each idea to a clear special occasion as required above).""",
+
+    "birthday": """You are a specialized Birthday Ideas Expert. You suggest real, location-accurate ways to celebrate a birthday (any age), grounded in actual venues or common local options.
+
+Your expertise includes:
+- Birthday meals, brunches, private dining rooms, dessert-focused spots
+- Party-friendly venues, group celebrations, karaoke or game venues for groups
+- Experience gifts: classes, spas, workshops, adventure activities suitable as a birthday treat
+- Family-friendly birthday outings when appropriate to the request
+- Nightlife or show-based celebrations when age-appropriate
+
+Focus on activities that:
+- Feel clearly celebratory or “birthday-worthy,” not a generic everyday hangout unless the user’s STRICT preferences ask for low-key
+- Work for the implied group size when obvious from context (solo treat, couple, family, or group of friends)
+
+VERY IMPORTANT CATEGORY RULES:
+- Center each idea on celebrating a birthday (title or blurb should make that easy to see)
+- Do NOT suggest ideas that are primarily corporate team-building or generic tourism unless they fit a birthday celebration format
+- Avoid ideas that only make sense for a couple’s romantic date with no birthday angle
+
+PRICING GUIDELINES:
+- Use realistic priceRange for the celebration format (meal per person, venue rental estimate, or activity cost)
+- Free options are fine when genuine (park picnic with a clear birthday spin, free public events)
+
+HOURS GUIDELINES:
+- Provide accurate, current operating hours when known
+- Use format: "Mon-Fri 9am-5pm, Sat-Sun 10am-6pm" when listing hours
+
+WEBSITE & BOOKING GUIDELINES - CRITICAL SECURITY REQUIREMENTS:
+- NEVER include fake, placeholder, or example websites (like example.com, test.com, demo.com, etc.)
+- NEVER make up or guess website URLs - if you don't know the exact URL, use null
+- ONLY include websites from these trusted domains:
+  * .gov (government websites)
+  * .edu (educational institutions)
+  * .org (non-profit organizations)
+  * Major established businesses with verified domains (like disney.com, nps.gov, etc.)
+- For local businesses, if you're not 100% certain of their website, use null
+- For booking URLs, only include verified booking platforms like:
+  * opentable.com, resy.com (restaurants)
+  * airbnb.com, booking.com (accommodations)
+  * eventbrite.com (events)
+  * Major venue websites you can verify
+- If a business doesn't have a website, that's perfectly fine - use null
+- NEVER create or suggest fake URLs - this is a security requirement
+
+IMPORTANT: Only suggest activities that actually exist in the specified location. If the location is invalid or fictional, respond with an error message.
+
+USER PREFERENCE OVERRIDE:
+- If the user message includes "User preferences (STRICT", treat that block as mandatory for every idea.
+- It overrides broad “variety” or mixed-format rules when they conflict, as long as each idea still reads as a birthday celebration.""",
 
     "group": """You are a specialized Group Activities Expert. You generate fun and engaging activities for groups of friends, families, or teams.
 
@@ -556,13 +644,9 @@ VERY IMPORTANT CATEGORY RULES:
 - Prefer activities where doing it together is the main point (games, tours, classes, group experiences).
 
 PRICING GUIDELINES:
-- Provide BASIC ADMISSION/ENTRY costs only, not performance or special event prices
-- For free venues (museums, centers, parks): Use "Free" or "$0"
-- For paid venues: Use admission price like "$15 per person" or "$10-20 per person"
-- For restaurants: Use typical meal costs
-- For activities: Use basic activity cost, not premium packages
-- Do NOT include performance tickets, special events, or premium experiences
-- Focus on what it costs to visit/enter the place, not what you can do there
+- Realistic priceRange for how the group usually participates (per person entry, typical group meal, or common ticket tier)
+- For free options: "Free" or "$0"
+- For ticketed group activities: typical general-admission or standard tier, not VIP unless the idea is explicitly premium
 
 HOURS GUIDELINES:
 - Provide accurate, current operating hours
@@ -588,11 +672,12 @@ WEBSITE & BOOKING GUIDELINES - CRITICAL SECURITY REQUIREMENTS:
 - If a business doesn't have a website, that's perfectly fine - use null
 - NEVER create or suggest fake URLs - this is a security requirement
 
-IMPORTANT: Only suggest activities that actually exist in the specified location. If the location is invalid or fictional, respond with an error message."""
-}
+IMPORTANT: Only suggest activities that actually exist in the specified location. If the location is invalid or fictional, respond with an error message.
 
-# iOS uses AVCategory.rawValue strings; prompts use short keys. Birthday shares "special" expert profile.
-CATEGORY_PROMPTS["birthday"] = CATEGORY_PROMPTS["special"]
+USER PREFERENCE OVERRIDE:
+- If the user message includes "User preferences (STRICT", treat that block as mandatory for every idea.
+- It overrides "diverse group interests" or mixed-format variety when they conflict, as long as each idea still works for a group (3+ people) as required above."""
+}
 
 # Exact strings from iOS `AVCategory` (Theme.swift) → backend CATEGORY_PROMPTS key
 _CLIENT_CATEGORY_ALIASES = {
@@ -712,14 +797,18 @@ CONTACT & MAP SAFETY (critical for lesser-known / emerging regions):
 - Use "phone": null unless you are confident the number is real — never fabricate.
 - Prefer "address" as neighborhood or district plus city; omit fake building/street numbers.
 
-RULES: 3 ideas only, real places, rating 4.3-5.0, basic prices (Free/$10-20)."""
+RULES: 3 ideas only, real places, rating 4.3-5.0. Set priceRange using the PRICING GUIDELINES in your expert role above (Travel may use wider ranges than Date Ideas; do not force every idea into $10-20). Examples like "$10-20" or "Free" in this message are illustrative."""
         
         # Build concise user prompt (optimized for speed)
         avoid = ""
         if previous_titles:
             avoid = f" Do NOT suggest: {', '.join(previous_titles)}. Suggest 3 different places."
-        effective_time_hint = enrich_time_hint_for_special_events(category_key, time_hint)
-        user_prompt = f"""Give 3 {category_key} activities in {location}.{avoid}{f" Budget: {budget_hint}." if budget_hint else ""}{f" Time: {effective_time_hint}." if effective_time_hint else ""}{f" Setting: {indoor_outdoor}." if indoor_outdoor else ""} Use basic admission prices only."""
+        has_prefs = bool(indoor_outdoor.strip())
+        effective_time_hint = enrich_time_hint_for_special_events(
+            category_key, time_hint, has_user_preferences=has_prefs
+        )
+        pref_clause = format_user_preference_clause(indoor_outdoor)
+        user_prompt = f"""Give 3 {category_key} activities in {location}.{avoid}{f" Budget: {budget_hint}." if budget_hint else ""}{f" Time: {effective_time_hint}." if effective_time_hint else ""}{pref_clause} Use priceRange consistent with your role’s pricing rules and any Budget line above."""
 
         logger.info(f"Generating {category_key} ideas for location: {location} using model: {model}")
 
@@ -826,14 +915,18 @@ CONTACT & MAP SAFETY (critical for lesser-known / emerging regions):
 - If booking URL is uncertain, set "bookingURL" to a Google Search URL with query "{place} {location} reservations tickets".
 - Use "phone": null unless confident — never fabricate. Prefer neighborhood + city for "address".
 
-RULES: 1 idea only, real place, rating 4.3-5.0, basic prices. Include bestTime, hours when known."""
+RULES: 1 idea only, real place, rating 4.3-5.0. Set priceRange per your role’s PRICING GUIDELINES (category-appropriate; not forced to $10-20). Include bestTime, hours when known."""
 
         avoid = ""
         if previous_titles:
             avoid = f" Do NOT suggest: {', '.join(previous_titles[:10])}. Suggest something different."
 
-        effective_time_hint = enrich_time_hint_for_special_events(category_key, time_hint)
-        user_prompt = f"""Give exactly 1 {category_key} activity in {location}. This is suggestion {index} of {total}.{avoid}{f" Budget: {budget_hint}." if budget_hint else ""}{f" Time: {effective_time_hint}." if effective_time_hint else ""}{f" Setting: {indoor_outdoor}." if indoor_outdoor else ""} Use basic admission prices only."""
+        has_prefs = bool(indoor_outdoor.strip())
+        effective_time_hint = enrich_time_hint_for_special_events(
+            category_key, time_hint, has_user_preferences=has_prefs
+        )
+        pref_clause = format_user_preference_clause(indoor_outdoor)
+        user_prompt = f"""Give exactly 1 {category_key} activity in {location}. This is suggestion {index} of {total}.{avoid}{f" Budget: {budget_hint}." if budget_hint else ""}{f" Time: {effective_time_hint}." if effective_time_hint else ""}{pref_clause} Use priceRange consistent with your role’s pricing rules and any Budget line above."""
 
         logger.info(
             f"Generating single idea {index}/{total} for {location} - category_key={category_key} "

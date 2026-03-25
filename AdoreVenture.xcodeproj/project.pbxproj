@@ -1,0 +1,659 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		CDBDB10E2E5A9336009C521C /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = CDBDB10D2E5A9336009C521C /* FirebaseAuth */; };
+		CDBDB1102E5A9336009C521C /* FirebaseCore in Frameworks */ = {isa = PBXBuildFile; productRef = CDBDB10F2E5A9336009C521C /* FirebaseCore */; };
+		CDBDB1122E5B1739009C521C /* FirebaseFunctions in Frameworks */ = {isa = PBXBuildFile; productRef = CDBDB1112E5B1739009C521C /* FirebaseFunctions */; };
+		CDBDB1162E5B31E9009C521C /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = CDBDB1152E5B31E9009C521C /* FirebaseFirestore */; };
+		CDBDB11D2E5B5106009C521C /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = CDBDB11C2E5B5106009C521C /* GoogleSignIn */; };
+		CDBDB11F2E5B5106009C521C /* GoogleSignInSwift in Frameworks */ = {isa = PBXBuildFile; productRef = CDBDB11E2E5B5106009C521C /* GoogleSignInSwift */; };
+		CDBDB1252E5B5200009C521C /* StripePaymentSheet in Frameworks */ = {isa = PBXBuildFile; productRef = CDBDB1232E5B5200009C521C /* StripePaymentSheet */; };
+		CDBDB1262E5B5200009C521C /* StripeApplePay in Frameworks */ = {isa = PBXBuildFile; productRef = CDBDB1242E5B5200009C521C /* StripeApplePay */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		CDBDB0B72E599531009C521C /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = CDBDB09E2E59952E009C521C /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = CDBDB0A52E59952F009C521C;
+			remoteInfo = AdoreVenture;
+		};
+		CDBDB0C12E599531009C521C /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = CDBDB09E2E59952E009C521C /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = CDBDB0A52E59952F009C521C;
+			remoteInfo = AdoreVenture;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		CDBDB0A62E59952F009C521C /* AdoreVenture.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AdoreVenture.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		CDBDB0B62E599531009C521C /* AdoreVentureTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AdoreVentureTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		CDBDB0C02E599531009C521C /* AdoreVentureUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AdoreVentureUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		CDBDB0A82E59952F009C521C /* AdoreVenture */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = AdoreVenture;
+			sourceTree = "<group>";
+		};
+		CDBDB0B92E599531009C521C /* AdoreVentureTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = AdoreVentureTests;
+			sourceTree = "<group>";
+		};
+		CDBDB0C32E599531009C521C /* AdoreVentureUITests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = AdoreVentureUITests;
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		CDBDB0A32E59952F009C521C /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				CDBDB11D2E5B5106009C521C /* GoogleSignIn in Frameworks */,
+				CDBDB1122E5B1739009C521C /* FirebaseFunctions in Frameworks */,
+				CDBDB1162E5B31E9009C521C /* FirebaseFirestore in Frameworks */,
+				CDBDB11F2E5B5106009C521C /* GoogleSignInSwift in Frameworks */,
+				CDBDB1252E5B5200009C521C /* StripePaymentSheet in Frameworks */,
+				CDBDB1262E5B5200009C521C /* StripeApplePay in Frameworks */,
+				CDBDB1102E5A9336009C521C /* FirebaseCore in Frameworks */,
+				CDBDB10E2E5A9336009C521C /* FirebaseAuth in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		CDBDB0B32E599531009C521C /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		CDBDB0BD2E599531009C521C /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		CDBDB09D2E59952E009C521C = {
+			isa = PBXGroup;
+			children = (
+				CDBDB0A82E59952F009C521C /* AdoreVenture */,
+				CDBDB0B92E599531009C521C /* AdoreVentureTests */,
+				CDBDB0C32E599531009C521C /* AdoreVentureUITests */,
+				CDBDB0A72E59952F009C521C /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		CDBDB0A72E59952F009C521C /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				CDBDB0A62E59952F009C521C /* AdoreVenture.app */,
+				CDBDB0B62E599531009C521C /* AdoreVentureTests.xctest */,
+				CDBDB0C02E599531009C521C /* AdoreVentureUITests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		CDBDB0A52E59952F009C521C /* AdoreVenture */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = CDBDB0CA2E599531009C521C /* Build configuration list for PBXNativeTarget "AdoreVenture" */;
+			buildPhases = (
+				CDBDB0A22E59952F009C521C /* Sources */,
+				CDBDB0A32E59952F009C521C /* Frameworks */,
+				CDBDB0A42E59952F009C521C /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				CDBDB0A82E59952F009C521C /* AdoreVenture */,
+			);
+			name = AdoreVenture;
+			packageProductDependencies = (
+				CDBDB10D2E5A9336009C521C /* FirebaseAuth */,
+				CDBDB10F2E5A9336009C521C /* FirebaseCore */,
+				CDBDB1112E5B1739009C521C /* FirebaseFunctions */,
+				CDBDB1152E5B31E9009C521C /* FirebaseFirestore */,
+				CDBDB11C2E5B5106009C521C /* GoogleSignIn */,
+				CDBDB11E2E5B5106009C521C /* GoogleSignInSwift */,
+				CDBDB1232E5B5200009C521C /* StripePaymentSheet */,
+				CDBDB1242E5B5200009C521C /* StripeApplePay */,
+			);
+			productName = AdoreVenture;
+			productReference = CDBDB0A62E59952F009C521C /* AdoreVenture.app */;
+			productType = "com.apple.product-type.application";
+		};
+		CDBDB0B52E599531009C521C /* AdoreVentureTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = CDBDB0CD2E599531009C521C /* Build configuration list for PBXNativeTarget "AdoreVentureTests" */;
+			buildPhases = (
+				CDBDB0B22E599531009C521C /* Sources */,
+				CDBDB0B32E599531009C521C /* Frameworks */,
+				CDBDB0B42E599531009C521C /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				CDBDB0B82E599531009C521C /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				CDBDB0B92E599531009C521C /* AdoreVentureTests */,
+			);
+			name = AdoreVentureTests;
+			packageProductDependencies = (
+			);
+			productName = AdoreVentureTests;
+			productReference = CDBDB0B62E599531009C521C /* AdoreVentureTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		CDBDB0BF2E599531009C521C /* AdoreVentureUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = CDBDB0D02E599531009C521C /* Build configuration list for PBXNativeTarget "AdoreVentureUITests" */;
+			buildPhases = (
+				CDBDB0BC2E599531009C521C /* Sources */,
+				CDBDB0BD2E599531009C521C /* Frameworks */,
+				CDBDB0BE2E599531009C521C /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				CDBDB0C22E599531009C521C /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				CDBDB0C32E599531009C521C /* AdoreVentureUITests */,
+			);
+			name = AdoreVentureUITests;
+			packageProductDependencies = (
+			);
+			productName = AdoreVentureUITests;
+			productReference = CDBDB0C02E599531009C521C /* AdoreVentureUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		CDBDB09E2E59952E009C521C /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1610;
+				LastUpgradeCheck = 1610;
+				TargetAttributes = {
+					CDBDB0A52E59952F009C521C = {
+						CreatedOnToolsVersion = 16.1;
+					};
+					CDBDB0B52E599531009C521C = {
+						CreatedOnToolsVersion = 16.1;
+						TestTargetID = CDBDB0A52E59952F009C521C;
+					};
+					CDBDB0BF2E599531009C521C = {
+						CreatedOnToolsVersion = 16.1;
+						TestTargetID = CDBDB0A52E59952F009C521C;
+					};
+				};
+			};
+			buildConfigurationList = CDBDB0A12E59952E009C521C /* Build configuration list for PBXProject "AdoreVenture" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = CDBDB09D2E59952E009C521C;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				CDBDB10C2E5A9336009C521C /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
+				CDBDB11B2E5B5106009C521C /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */,
+				CDBDB1202E5B5200009C521C /* XCRemoteSwiftPackageReference "stripe-ios-spm" */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = CDBDB0A72E59952F009C521C /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				CDBDB0A52E59952F009C521C /* AdoreVenture */,
+				CDBDB0B52E599531009C521C /* AdoreVentureTests */,
+				CDBDB0BF2E599531009C521C /* AdoreVentureUITests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		CDBDB0A42E59952F009C521C /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		CDBDB0B42E599531009C521C /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		CDBDB0BE2E599531009C521C /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		CDBDB0A22E59952F009C521C /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		CDBDB0B22E599531009C521C /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		CDBDB0BC2E599531009C521C /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		CDBDB0B82E599531009C521C /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = CDBDB0A52E59952F009C521C /* AdoreVenture */;
+			targetProxy = CDBDB0B72E599531009C521C /* PBXContainerItemProxy */;
+		};
+		CDBDB0C22E599531009C521C /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = CDBDB0A52E59952F009C521C /* AdoreVenture */;
+			targetProxy = CDBDB0C12E599531009C521C /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		CDBDB0C82E599531009C521C /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.1;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		CDBDB0C92E599531009C521C /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.1;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		CDBDB0CB2E599531009C521C /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = AdoreVenture.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 16;
+				DEVELOPMENT_ASSET_PATHS = "\"AdoreVenture/Preview Content\"";
+				DEVELOPMENT_TEAM = 36VD4873YY;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.03;
+				PRODUCT_BUNDLE_IDENTIFIER = com.DagmawiMulualem.AdoreVenture;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		CDBDB0CC2E599531009C521C /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = AdoreVenture.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 16;
+				DEVELOPMENT_ASSET_PATHS = "\"AdoreVenture/Preview Content\"";
+				DEVELOPMENT_TEAM = 36VD4873YY;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.03;
+				PRODUCT_BUNDLE_IDENTIFIER = com.DagmawiMulualem.AdoreVenture;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		CDBDB0CE2E599531009C521C /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 36VD4873YY;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.1;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.DagmawiMulualem.AdoreVentureTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/AdoreVenture.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/AdoreVenture";
+			};
+			name = Debug;
+		};
+		CDBDB0CF2E599531009C521C /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 36VD4873YY;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.1;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.DagmawiMulualem.AdoreVentureTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/AdoreVenture.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/AdoreVenture";
+			};
+			name = Release;
+		};
+		CDBDB0D12E599531009C521C /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 36VD4873YY;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.DagmawiMulualem.AdoreVentureUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = AdoreVenture;
+			};
+			name = Debug;
+		};
+		CDBDB0D22E599531009C521C /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 36VD4873YY;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.DagmawiMulualem.AdoreVentureUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = AdoreVenture;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		CDBDB0A12E59952E009C521C /* Build configuration list for PBXProject "AdoreVenture" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				CDBDB0C82E599531009C521C /* Debug */,
+				CDBDB0C92E599531009C521C /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		CDBDB0CA2E599531009C521C /* Build configuration list for PBXNativeTarget "AdoreVenture" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				CDBDB0CB2E599531009C521C /* Debug */,
+				CDBDB0CC2E599531009C521C /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		CDBDB0CD2E599531009C521C /* Build configuration list for PBXNativeTarget "AdoreVentureTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				CDBDB0CE2E599531009C521C /* Debug */,
+				CDBDB0CF2E599531009C521C /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		CDBDB0D02E599531009C521C /* Build configuration list for PBXNativeTarget "AdoreVentureUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				CDBDB0D12E599531009C521C /* Debug */,
+				CDBDB0D22E599531009C521C /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		CDBDB10C2E5A9336009C521C /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/firebase/firebase-ios-sdk";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 12.1.0;
+			};
+		};
+		CDBDB11B2E5B5106009C521C /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/google/GoogleSignIn-iOS";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 9.0.0;
+			};
+		};
+		CDBDB1202E5B5200009C521C /* XCRemoteSwiftPackageReference "stripe-ios-spm" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/stripe/stripe-ios-spm";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 24.0.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		CDBDB10D2E5A9336009C521C /* FirebaseAuth */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = CDBDB10C2E5A9336009C521C /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseAuth;
+		};
+		CDBDB10F2E5A9336009C521C /* FirebaseCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = CDBDB10C2E5A9336009C521C /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseCore;
+		};
+		CDBDB1112E5B1739009C521C /* FirebaseFunctions */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = CDBDB10C2E5A9336009C521C /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseFunctions;
+		};
+		CDBDB1152E5B31E9009C521C /* FirebaseFirestore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = CDBDB10C2E5A9336009C521C /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseFirestore;
+		};
+		CDBDB11C2E5B5106009C521C /* GoogleSignIn */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = CDBDB11B2E5B5106009C521C /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */;
+			productName = GoogleSignIn;
+		};
+		CDBDB11E2E5B5106009C521C /* GoogleSignInSwift */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = CDBDB11B2E5B5106009C521C /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */;
+			productName = GoogleSignInSwift;
+		};
+		CDBDB1232E5B5200009C521C /* StripePaymentSheet */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = CDBDB1202E5B5200009C521C /* XCRemoteSwiftPackageReference "stripe-ios-spm" */;
+			productName = StripePaymentSheet;
+		};
+		CDBDB1242E5B5200009C521C /* StripeApplePay */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = CDBDB1202E5B5200009C521C /* XCRemoteSwiftPackageReference "stripe-ios-spm" */;
+			productName = StripeApplePay;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = CDBDB09E2E59952E009C521C /* Project object */;
+}

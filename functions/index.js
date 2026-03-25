@@ -1,15 +1,47 @@
 const functions = require('firebase-functions');
+const { HttpsError: HttpsErrorGen2 } = require('firebase-functions/v2/https');
 const admin = require('firebase-admin');
 const axios = require('axios');
-const stripe = require('stripe')(functions.config().stripe?.secret_key);
 const OpenAI = require('openai');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
+
+/**
+ * Gen2 Cloud Run sets K_CONFIGURATION; `functions.config()` then throws. Read the same JSON from
+ * CLOUD_RUNTIME_CONFIG (injected on deploy from legacy `firebase functions:config`) or fall back to v1 config().
+ */
+let __runtimeConfigCache;
+function getRuntimeConfig() {
+  if (__runtimeConfigCache !== undefined) return __runtimeConfigCache;
+  if (process.env.K_CONFIGURATION) {
+    try {
+      const raw = process.env.CLOUD_RUNTIME_CONFIG;
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object') {
+          const copy = { ...parsed };
+          delete copy.firebase;
+          __runtimeConfigCache = copy;
+          return __runtimeConfigCache;
+        }
+      }
+    } catch (e) {
+      console.warn('[getRuntimeConfig] gen2 CLOUD_RUNTIME_CONFIG parse failed:', e.message);
+    }
+    __runtimeConfigCache = {};
+    return __runtimeConfigCache;
+  }
+  __runtimeConfigCache = functions.config();
+  return __runtimeConfigCache;
+}
+
+const stripe = require('stripe')(getRuntimeConfig().stripe?.secret_key);
 
 // Initialize Firebase Admin
 admin.initializeApp();
 
 // Your Python backend URL (deployed on Render - Starter plan for zero cold starts)
-const PYTHON_BACKEND_URL = functions.config().python_backend?.url || 'https://adoreventure-backend-clean.onrender.com';
+const PYTHON_BACKEND_URL =
+  getRuntimeConfig().python_backend?.url || 'https://adoreventure-backend-clean.onrender.com';
 
 // Configuration
 const MAX_RETRIES = 2;
@@ -21,7 +53,7 @@ let _openai = null;
 function getOpenAIClient() {
   if (!_openai) {
     _openai = new OpenAI({
-      apiKey: functions.config().openai?.key || process.env.OPENAI_API_KEY,
+      apiKey: getRuntimeConfig().openai?.key || process.env.OPENAI_API_KEY,
     });
   }
   return _openai;
@@ -37,14 +69,15 @@ function isLocalCategory(category) {
   return c.includes('local');
 }
 
-function enrichTimeHintForSpecialEvents(timeHint, category) {
+function enrichTimeHintForSpecialEvents(timeHint, category, indoorOutdoor) {
   const baseHint = String(timeHint || '').trim();
+  const hasPrefs = String(indoorOutdoor || '').trim().length > 0;
   let categoryConstraint = '';
 
-  if (isSpecialEventsCategory(category)) {
+  if (isSpecialEventsCategory(category) && !hasPrefs) {
     categoryConstraint =
       'Only include upcoming events from today through the next 14 days; do not include past events. Include the exact date (day and month) in the title or blurb, and prefer Eventbrite or official venue booking links when available.';
-  } else if (isLocalCategory(category)) {
+  } else if (isLocalCategory(category) && !hasPrefs) {
     categoryConstraint =
       'Prioritize truly local-feeling spots: neighborhood coffee shops, VR/game places, gardens, parks, community activities, and local hangouts. Avoid tourist attractions and generic travel landmarks.';
   }
@@ -53,8 +86,19 @@ function enrichTimeHintForSpecialEvents(timeHint, category) {
   return baseHint ? `${baseHint}. ${categoryConstraint}` : categoryConstraint;
 }
 
+/** App sends vibe prefs in `indoorOutdoor` (legacy name). Must override broad diversity rules in prompts. */
+function formatUserPreferenceClause(indoorOutdoor) {
+  const s = String(indoorOutdoor || '').trim();
+  if (!s) return '';
+  return (
+    ` User preferences (STRICT — every suggestion must match): ${s}.` +
+    ' Apply with this request category (Date Ideas, Travel, etc.): preferences narrow activity type; category defines audience.' +
+    ' These override generic variety rules. Do not suggest unrelated vibe types (e.g. parks when the user asked only for dining unless food/drink is the main activity).'
+  );
+}
+
 function hasOpenAIKeyConfigured() {
-  const k = functions.config().openai?.key || process.env.OPENAI_API_KEY;
+  const k = getRuntimeConfig().openai?.key || process.env.OPENAI_API_KEY;
   return typeof k === 'string' && k.trim().length > 0;
 }
 
@@ -92,7 +136,8 @@ function aiTrace(step, details) {
 // Render cold start + OpenAI can take 45–60s; 25s axios caused false timeouts → deadline-exceeded / INTERNAL.
 const RENDER_OPENAI_HTTP_MS = 60000;
 const RENDER_AXIOS_OPTS = { timeout: RENDER_OPENAI_HTTP_MS, headers: { 'Content-Type': 'application/json' } };
-const IDEA_CALL_RUNTIME = { timeoutSeconds: 120, memory: '512MB' };
+/** 1st gen callables for idea endpoints — `context.auth` is reliable for iOS; Gen2 `request.auth` was empty for the same Bearer + JSON requests. */
+const IDEA_CALL_V1_RUNTIME = { timeoutSeconds: 120, memory: '512MB', minInstances: 1 };
 
 /**
  * When Render /api/idea/single fails, return one idea via OpenAI (same JSON shape as Python backend).
@@ -119,11 +164,12 @@ async function generateSingleIdeaOpenAIFallback(data) {
         .filter(Boolean)
     : [];
   const budgetHint = data.budgetHint || '';
-  const timeHint = enrichTimeHintForSpecialEvents(data.timeHint, trimmedCategory);
   const indoorOutdoor = data.indoorOutdoor || '';
+  const timeHint = enrichTimeHintForSpecialEvents(data.timeHint, trimmedCategory, indoorOutdoor);
 
   const systemPrompt = [
     `You are AdoreVenture, an AI that suggests real-world ${trimmedCategory} activities.`,
+    'If the user message includes "User preferences (STRICT", follow it; it overrides generic variety rules.',
     'Return JSON with exactly 1 idea under the key "ideas" (array with one object).',
     'Each idea must have: title, blurb (1 sentence), rating (4.3–5.0), place, duration, priceRange, tags[], address (neighborhood + city or null), phone (or null), website (https URL), bookingURL (https URL), bestTime, hours (array of strings).',
     '',
@@ -143,8 +189,8 @@ async function generateSingleIdeaOpenAIFallback(data) {
     avoid +
     (budgetHint ? ` Budget: ${budgetHint}.` : '') +
     (timeHint ? ` Time: ${timeHint}.` : '') +
-    (indoorOutdoor ? ` Setting: ${indoorOutdoor}.` : '') +
-    ' Use basic admission prices only.';
+    formatUserPreferenceClause(indoorOutdoor) +
+    ' Use priceRange appropriate to this category (Travel may use higher ranges than Date Ideas).';
 
   const openai = getOpenAIClient();
   let response;
@@ -187,7 +233,8 @@ async function generateSingleIdeaOpenAIFallback(data) {
   return { ideas: [ideasData.ideas[0]] };
 }
 
-exports.getIdeas = functions.runWith(IDEA_CALL_RUNTIME).https.onCall(async (data, context) => {
+exports.getIdeas = functions.runWith(IDEA_CALL_V1_RUNTIME).region('us-central1').https.onCall(async (data, context) => {
+  const auth = context.auth;
   const reqId = `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 
   // Helper: generate ideas directly via OpenAI if Render backend is slow/unavailable
@@ -215,6 +262,7 @@ exports.getIdeas = functions.runWith(IDEA_CALL_RUNTIME).https.onCall(async (data
 
     const systemPrompt = [
       `You are AdoreVenture, an AI that suggests real-world ${trimmedCategory} activities.`,
+      'If the user message includes "User preferences (STRICT", follow it for every idea; it overrides generic variety or mixed-activity rules.',
       'Return JSON with exactly 3 ideas under the key "ideas".',
       'Each idea must have: title, blurb (1 sentence), rating (4.3–5.0), place, duration, priceRange, tags[], address (neighborhood + city or null), phone (or null), website (https URL), bookingURL (https URL).',
       '',
@@ -233,14 +281,14 @@ exports.getIdeas = functions.runWith(IDEA_CALL_RUNTIME).https.onCall(async (data
       )}. Suggest 3 different places (different titles).`;
     }
 
-    const effectiveTimeHint = enrichTimeHintForSpecialEvents(timeHint, trimmedCategory);
+    const effectiveTimeHint = enrichTimeHintForSpecialEvents(timeHint, trimmedCategory, indoorOutdoor);
     const userPrompt =
       `Give 3 ${trimmedCategory} activities in ${trimmedLocation}.` +
       avoid +
       (budgetHint ? ` Budget: ${budgetHint}.` : '') +
       (effectiveTimeHint ? ` Time: ${effectiveTimeHint}.` : '') +
-      (indoorOutdoor ? ` Setting: ${indoorOutdoor}.` : '') +
-      ' Use basic admission prices only.';
+      formatUserPreferenceClause(indoorOutdoor) +
+      ' Use priceRange appropriate to this category (Travel may use higher ranges than Date Ideas).';
 
     const openai = getOpenAIClient();
     let response;
@@ -295,7 +343,7 @@ exports.getIdeas = functions.runWith(IDEA_CALL_RUNTIME).https.onCall(async (data
 
   try {
     // Verify authentication
-    if (!context.auth) {
+    if (!auth) {
       throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
     }
 
@@ -314,7 +362,7 @@ exports.getIdeas = functions.runWith(IDEA_CALL_RUNTIME).https.onCall(async (data
 
     aiTrace('getIdeas_start', {
       reqId,
-      uid: context.auth.uid.slice(0, 8),
+      uid: auth.uid.slice(0, 8),
       location: trimmedLocation.slice(0, 80),
       category: trimmedCategory,
       model: requestedModel,
@@ -322,7 +370,7 @@ exports.getIdeas = functions.runWith(IDEA_CALL_RUNTIME).https.onCall(async (data
     });
 
     const prevTitles = Array.isArray(previous_titles) ? previous_titles.slice(0, 15) : [];
-    const effectiveTimeHint = enrichTimeHintForSpecialEvents(timeHint, trimmedCategory);
+    const effectiveTimeHint = enrichTimeHintForSpecialEvents(timeHint, trimmedCategory, indoorOutdoor);
     // Primary path: Render backend (fast when healthy)
     const tRender = Date.now();
     try {
@@ -353,7 +401,7 @@ exports.getIdeas = functions.runWith(IDEA_CALL_RUNTIME).https.onCall(async (data
       });
 
       // Log successful request
-      await logRequest(context.auth.uid, trimmedLocation, trimmedCategory, true);
+      await logRequest(auth.uid, trimmedLocation, trimmedCategory, true);
 
       return parsed;
     } catch (renderError) {
@@ -367,7 +415,7 @@ exports.getIdeas = functions.runWith(IDEA_CALL_RUNTIME).https.onCall(async (data
         const ideasData = await generateIdeasDirectlyViaOpenAI();
         aiTrace('getIdeas_openai_fallback_ok', { reqId, ms: Date.now() - tFb });
         await logRequest(
-          context.auth.uid,
+          auth.uid,
           trimmedLocation,
           trimmedCategory,
           true,
@@ -396,7 +444,7 @@ exports.getIdeas = functions.runWith(IDEA_CALL_RUNTIME).https.onCall(async (data
     try {
       const { location, category } = data || {};
       await logRequest(
-        context.auth?.uid || 'unknown',
+        auth?.uid || 'unknown',
         location || 'unknown',
         category || 'unknown',
         false,
@@ -427,10 +475,11 @@ exports.getIdeas = functions.runWith(IDEA_CALL_RUNTIME).https.onCall(async (data
 });
 
 // Single idea for streaming (client calls 3 times; log request only after all 3)
-exports.getSingleIdea = functions.runWith(IDEA_CALL_RUNTIME).https.onCall(async (data, context) => {
+exports.getSingleIdea = functions.runWith(IDEA_CALL_V1_RUNTIME).region('us-central1').https.onCall(async (data, context) => {
+  const auth = context.auth;
   const reqId = `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
   try {
-    if (!context.auth) {
+    if (!auth) {
       throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
     }
     const { location, category, index, total, previous_titles, budgetHint, timeHint, indoorOutdoor, model } = data;
@@ -443,11 +492,11 @@ exports.getSingleIdea = functions.runWith(IDEA_CALL_RUNTIME).https.onCall(async 
     const idx = typeof index === 'number' ? index : 1;
     const tot = typeof total === 'number' ? total : 3;
     const prevTitles = Array.isArray(previous_titles) ? previous_titles : [];
-    const effectiveTimeHint = enrichTimeHintForSpecialEvents(timeHint, trimmedCategory);
+    const effectiveTimeHint = enrichTimeHintForSpecialEvents(timeHint, trimmedCategory, indoorOutdoor);
 
     aiTrace('getSingleIdea_start', {
       reqId,
-      uid: context.auth.uid.slice(0, 8),
+      uid: auth.uid.slice(0, 8),
       idx,
       tot,
       location: trimmedLocation.slice(0, 80),
@@ -588,7 +637,7 @@ async function generateIdeasWithOpenAI(prompt, modelName) {
 }
 
 async function generateIdeasWithGemini(prompt, modelName) {
-  const apiKey = functions.config().gemini?.key;
+  const apiKey = getRuntimeConfig().gemini?.key;
   if (!apiKey) {
     throw new Error('Gemini API key is not configured in Firebase Functions config.');
   }
@@ -649,13 +698,13 @@ exports.checkUsernameAvailability = functions.https.onCall(async (data, context)
   try {
     // Verify authentication
     if (!context.auth) {
-      throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
+      throw new HttpsErrorGen2('unauthenticated', 'User must be authenticated');
     }
 
     const { username } = data;
 
     if (!username) {
-      throw new functions.https.HttpsError('invalid-argument', 'Username is required');
+      throw new HttpsErrorGen2('invalid-argument', 'Username is required');
     }
 
     console.log(`Checking username availability for: ${username}, user: ${context.auth.uid}`);
@@ -686,7 +735,7 @@ exports.checkUsernameAvailability = functions.https.onCall(async (data, context)
 
   } catch (error) {
     console.error('Error checking username availability:', error);
-    throw new functions.https.HttpsError('internal', error.message || 'Failed to check username availability');
+    throw new HttpsErrorGen2('internal', error.message || 'Failed to check username availability');
   }
 });
 
@@ -694,13 +743,13 @@ exports.saveUsername = functions.https.onCall(async (data, context) => {
   try {
     // Verify authentication
     if (!context.auth) {
-      throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
+      throw new HttpsErrorGen2('unauthenticated', 'User must be authenticated');
     }
 
     const { username } = data;
 
     if (!username) {
-      throw new functions.https.HttpsError('invalid-argument', 'Username is required');
+      throw new HttpsErrorGen2('invalid-argument', 'Username is required');
     }
 
     console.log(`Saving username '${username}' for user ${context.auth.uid}`);
@@ -712,7 +761,7 @@ exports.saveUsername = functions.https.onCall(async (data, context) => {
       .get();
 
     if (!snapshot.empty) {
-      throw new functions.https.HttpsError('already-exists', 'Username is already taken');
+      throw new HttpsErrorGen2('already-exists', 'Username is already taken');
     }
 
     // Save username to user document
@@ -732,10 +781,10 @@ exports.saveUsername = functions.https.onCall(async (data, context) => {
     console.error('Error saving username:', error);
     
     if (error.code === 'already-exists') {
-      throw new functions.https.HttpsError('already-exists', 'Username is already taken');
+      throw new HttpsErrorGen2('already-exists', 'Username is already taken');
     }
     
-    throw new functions.https.HttpsError('internal', error.message || 'Failed to save username');
+    throw new HttpsErrorGen2('internal', error.message || 'Failed to save username');
   }
 });
 
@@ -746,7 +795,7 @@ exports.sendCustomPasswordReset = functions.https.onCall(async (data, context) =
     const { email } = data;
     
     if (!email) {
-      throw new functions.https.HttpsError('invalid-argument', 'Email is required');
+      throw new HttpsErrorGen2('invalid-argument', 'Email is required');
     }
     
     console.log(`Sending custom password reset email to: ${email}`);
@@ -778,7 +827,7 @@ exports.sendCustomPasswordReset = functions.https.onCall(async (data, context) =
     
   } catch (error) {
     console.error('Error sending custom password reset email:', error);
-    throw new functions.https.HttpsError('internal', error.message);
+    throw new HttpsErrorGen2('internal', error.message);
   }
 });
 
@@ -788,13 +837,13 @@ exports.testStripeConfig = functions.https.onCall(async (data, context) => {
   try {
     // Verify authentication
     if (!context.auth) {
-      throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
+      throw new HttpsErrorGen2('unauthenticated', 'User must be authenticated');
     }
 
     // Check if user is admin (you can add admin email validation here)
     const adminEmails = ['dagmawi.m.mulualem@gmail.com'];
     if (!adminEmails.includes(context.auth.token.email)) {
-      throw new functions.https.HttpsError('permission-denied', 'Admin access required');
+      throw new HttpsErrorGen2('permission-denied', 'Admin access required');
     }
 
     // Test basic Stripe connectivity
@@ -821,18 +870,18 @@ exports.testStripeConfig = functions.https.onCall(async (data, context) => {
 // Admin: Grant credits to a user by email (e.g. support / promo)
 exports.grantCreditsToUserByEmail = functions.https.onCall(async (data, context) => {
   if (!context.auth) {
-    throw new functions.https.HttpsError('unauthenticated', 'Must be signed in');
+    throw new HttpsErrorGen2('unauthenticated', 'Must be signed in');
   }
   const adminEmails = ['dagmawi.m.mulualem@gmail.com'];
   if (!adminEmails.includes(context.auth.token.email)) {
-    throw new functions.https.HttpsError('permission-denied', 'Admin access required');
+    throw new HttpsErrorGen2('permission-denied', 'Admin access required');
   }
 
   const email = (data && data.email) ? String(data.email).trim().toLowerCase() : '';
   const amount = (data && typeof data.amount === 'number') ? Math.max(0, Math.floor(data.amount)) : 0;
 
   if (!email || amount <= 0) {
-    throw new functions.https.HttpsError('invalid-argument', 'Provide email and amount (positive number)');
+    throw new HttpsErrorGen2('invalid-argument', 'Provide email and amount (positive number)');
   }
 
   try {
@@ -854,10 +903,10 @@ exports.grantCreditsToUserByEmail = functions.https.onCall(async (data, context)
     return { success: true, email, uid, previousCredits: current, newCredits };
   } catch (err) {
     if (err.code === 'auth/user-not-found') {
-      throw new functions.https.HttpsError('not-found', `No user found with email: ${email}`);
+      throw new HttpsErrorGen2('not-found', `No user found with email: ${email}`);
     }
     console.error('grantCreditsToUserByEmail error:', err);
-    throw new functions.https.HttpsError('internal', err.message || 'Failed to grant credits');
+    throw new HttpsErrorGen2('internal', err.message || 'Failed to grant credits');
   }
 });
 
@@ -867,19 +916,19 @@ exports.createPaymentIntent = functions.https.onCall(async (data, context) => {
   try {
     // Verify authentication
     if (!context.auth) {
-      throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
+      throw new HttpsErrorGen2('unauthenticated', 'User must be authenticated');
     }
 
     const { planId, stripePriceId, amount, currency } = data;
 
     // Validate required fields
     if (!planId || !stripePriceId || !amount || !currency) {
-      throw new functions.https.HttpsError('invalid-argument', 'Missing required payment information');
+      throw new HttpsErrorGen2('invalid-argument', 'Missing required payment information');
     }
 
     // Validate amount
     if (amount <= 0) {
-      throw new functions.https.HttpsError('invalid-argument', 'Invalid amount');
+      throw new HttpsErrorGen2('invalid-argument', 'Invalid amount');
     }
 
     console.log(`Creating payment intent for user ${context.auth.uid}, plan: ${planId}, amount: ${amount}, currency: ${currency}`);
@@ -918,13 +967,13 @@ exports.createPaymentIntent = functions.https.onCall(async (data, context) => {
     
     // Provide more specific error messages
     if (error.type === 'StripeInvalidRequestError') {
-      throw new functions.https.HttpsError('invalid-argument', `Invalid request: ${error.message}`);
+      throw new HttpsErrorGen2('invalid-argument', `Invalid request: ${error.message}`);
     } else if (error.type === 'StripeAuthenticationError') {
-      throw new functions.https.HttpsError('unauthenticated', 'Stripe authentication failed');
+      throw new HttpsErrorGen2('unauthenticated', 'Stripe authentication failed');
     } else if (error.type === 'StripePermissionError') {
-      throw new functions.https.HttpsError('permission-denied', 'Stripe permission denied');
+      throw new HttpsErrorGen2('permission-denied', 'Stripe permission denied');
     } else {
-      throw new functions.https.HttpsError('internal', error.message || 'Failed to create payment intent');
+      throw new HttpsErrorGen2('internal', error.message || 'Failed to create payment intent');
     }
   }
 });
@@ -933,14 +982,14 @@ exports.confirmPayment = functions.https.onCall(async (data, context) => {
   try {
     // Verify authentication
     if (!context.auth) {
-      throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
+      throw new HttpsErrorGen2('unauthenticated', 'User must be authenticated');
     }
 
     const { paymentIntentId, paymentMethodId } = data;
 
     // Validate required fields
     if (!paymentIntentId || !paymentMethodId) {
-      throw new functions.https.HttpsError('invalid-argument', 'Missing payment information');
+      throw new HttpsErrorGen2('invalid-argument', 'Missing payment information');
     }
 
     console.log(`Confirming payment for user ${context.auth.uid}, intent: ${paymentIntentId}`);
@@ -983,14 +1032,14 @@ exports.createSubscription = functions.https.onCall(async (data, context) => {
   try {
     // Verify authentication
     if (!context.auth) {
-      throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
+      throw new HttpsErrorGen2('unauthenticated', 'User must be authenticated');
     }
 
     const { planId, stripePriceId, paymentMethodId, interval } = data;
 
     // Validate required fields
     if (!planId || !stripePriceId || !paymentMethodId || !interval) {
-      throw new functions.https.HttpsError('invalid-argument', 'Missing required subscription information');
+      throw new HttpsErrorGen2('invalid-argument', 'Missing required subscription information');
     }
 
     console.log(`Creating subscription for user ${context.auth.uid}, plan: ${planId}`);
@@ -1071,7 +1120,7 @@ exports.cancelSubscription = functions.https.onCall(async (data, context) => {
   try {
     // Verify authentication
     if (!context.auth) {
-      throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
+      throw new HttpsErrorGen2('unauthenticated', 'User must be authenticated');
     }
 
     console.log(`Cancelling subscription for user ${context.auth.uid}`);
@@ -1079,7 +1128,7 @@ exports.cancelSubscription = functions.https.onCall(async (data, context) => {
     // Get user data to check what type of payment/subscription they have
     const userDoc = await admin.firestore().collection('users').doc(context.auth.uid).get();
     if (!userDoc.exists) {
-      throw new functions.https.HttpsError('not-found', 'User not found');
+      throw new HttpsErrorGen2('not-found', 'User not found');
     }
 
     const userData = userDoc.data();
@@ -1173,7 +1222,7 @@ exports.cancelSubscription = functions.https.onCall(async (data, context) => {
 
   } catch (error) {
     console.error('Error cancelling subscription:', error);
-    throw new functions.https.HttpsError('internal', error.message || 'Subscription cancellation failed');
+    throw new HttpsErrorGen2('internal', error.message || 'Subscription cancellation failed');
   }
 });
 
@@ -1181,7 +1230,7 @@ exports.getSubscriptionStatus = functions.https.onCall(async (data, context) => 
   try {
     // Verify authentication
     if (!context.auth) {
-      throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
+      throw new HttpsErrorGen2('unauthenticated', 'User must be authenticated');
     }
 
     console.log(`Getting subscription status for user ${context.auth.uid}`);
@@ -1238,7 +1287,7 @@ exports.getSubscriptionStatus = functions.https.onCall(async (data, context) => 
 
   } catch (error) {
     console.error('Error getting subscription status:', error);
-    throw new functions.https.HttpsError('internal', error.message || 'Failed to get subscription status');
+    throw new HttpsErrorGen2('internal', error.message || 'Failed to get subscription status');
   }
 });
 
@@ -1246,13 +1295,13 @@ exports.getSubscriptionClientSecret = functions.https.onCall(async (data, contex
   try {
     // Verify authentication
     if (!context.auth) {
-      throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
+      throw new HttpsErrorGen2('unauthenticated', 'User must be authenticated');
     }
 
     const { subscriptionId } = data;
 
     if (!subscriptionId) {
-      throw new functions.https.HttpsError('invalid-argument', 'Subscription ID is required');
+      throw new HttpsErrorGen2('invalid-argument', 'Subscription ID is required');
     }
 
     console.log(`Getting client secret for subscription: ${subscriptionId}`);
@@ -1328,14 +1377,14 @@ exports.createSetupIntent = functions.https.onCall(async (data, context) => {
   try {
     // Verify authentication
     if (!context.auth) {
-      throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
+      throw new HttpsErrorGen2('unauthenticated', 'User must be authenticated');
     }
 
     const { planId, stripePriceId, amount, currency } = data;
 
     // Validate required fields
     if (!planId || !stripePriceId) {
-      throw new functions.https.HttpsError('invalid-argument', 'Missing required fields');
+      throw new HttpsErrorGen2('invalid-argument', 'Missing required fields');
     }
 
     console.log(`Creating setup intent for plan: ${planId}`);
@@ -1363,14 +1412,14 @@ exports.createSetupIntent = functions.https.onCall(async (data, context) => {
 
   } catch (error) {
     console.error('Error creating setup intent:', error);
-    throw new functions.https.HttpsError('internal', error.message);
+    throw new HttpsErrorGen2('internal', error.message);
   }
 });
 
 // Webhook handler for Stripe events
 exports.stripeWebhook = functions.https.onRequest(async (req, res) => {
   const sig = req.headers['stripe-signature'];
-  const webhookSecret = functions.config().stripe?.webhook_secret;
+  const webhookSecret = getRuntimeConfig().stripe?.webhook_secret;
 
   let event;
 
@@ -1532,7 +1581,7 @@ exports.createPaymentMethod = functions.https.onCall(async (data, context) => {
   try {
     // Verify authentication
     if (!context.auth) {
-      throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
+      throw new HttpsErrorGen2('unauthenticated', 'User must be authenticated');
     }
 
     const { paymentMethodData } = data;
@@ -1540,7 +1589,7 @@ exports.createPaymentMethod = functions.https.onCall(async (data, context) => {
 
     // Validate required fields
     if (!paymentMethodData) {
-      throw new functions.https.HttpsError('invalid-argument', 'Payment method data is required');
+      throw new HttpsErrorGen2('invalid-argument', 'Payment method data is required');
     }
 
     console.log(`Creating payment method for user: ${userId}`);
@@ -1577,7 +1626,7 @@ exports.createPaymentMethod = functions.https.onCall(async (data, context) => {
         };
       } catch (error) {
         console.error('Apple Pay payment method creation failed:', error);
-        throw new functions.https.HttpsError('internal', 'Apple Pay payment method creation failed. Please try again.');
+        throw new HttpsErrorGen2('internal', 'Apple Pay payment method creation failed. Please try again.');
       }
     } else {
       // For other payment methods
@@ -1600,17 +1649,17 @@ exports.createPaymentMethod = functions.https.onCall(async (data, context) => {
 
     // Handle specific Stripe errors
     if (error.type === 'StripeInvalidRequestError') {
-      throw new functions.https.HttpsError('invalid-argument', 'Invalid payment method data. Please try again.');
+      throw new HttpsErrorGen2('invalid-argument', 'Invalid payment method data. Please try again.');
     } else if (error.type === 'StripeAuthenticationError') {
-      throw new functions.https.HttpsError('unauthenticated', 'Payment authentication failed. Please try again.');
+      throw new HttpsErrorGen2('unauthenticated', 'Payment authentication failed. Please try again.');
     } else if (error.type === 'StripePermissionError') {
-      throw new functions.https.HttpsError('permission-denied', 'Payment permission denied. Please contact support.');
+      throw new HttpsErrorGen2('permission-denied', 'Payment permission denied. Please contact support.');
     } else if (error.type === 'StripeRateLimitError') {
-      throw new functions.https.HttpsError('resource-exhausted', 'Too many payment requests. Please wait a moment and try again.');
+      throw new HttpsErrorGen2('resource-exhausted', 'Too many payment requests. Please wait a moment and try again.');
     } else if (error.type === 'StripeAPIError') {
-      throw new functions.https.HttpsError('internal', 'Payment service error. Please try again later.');
+      throw new HttpsErrorGen2('internal', 'Payment service error. Please try again later.');
     } else {
-      throw new functions.https.HttpsError('internal', 'Payment method creation failed. Please try again.');
+      throw new HttpsErrorGen2('internal', 'Payment method creation failed. Please try again.');
     }
   }
 });
@@ -1621,7 +1670,7 @@ exports.confirmStripePayment = functions.https.onCall(async (data, context) => {
   try {
     // Verify authentication
     if (!context.auth) {
-      throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
+      throw new HttpsErrorGen2('unauthenticated', 'User must be authenticated');
     }
 
     const { clientSecret, paymentMethodId } = data;
@@ -1629,7 +1678,7 @@ exports.confirmStripePayment = functions.https.onCall(async (data, context) => {
 
     // Validate required fields
     if (!clientSecret || !paymentMethodId) {
-      throw new functions.https.HttpsError('invalid-argument', 'Client secret and payment method ID are required');
+      throw new HttpsErrorGen2('invalid-argument', 'Client secret and payment method ID are required');
     }
 
     console.log(`Confirming Apple Pay payment for user: ${userId}`);
@@ -1736,19 +1785,19 @@ exports.confirmStripePayment = functions.https.onCall(async (data, context) => {
     // Handle specific Stripe errors
     if (error.type === 'StripeCardError') {
       const errorMessage = error.message || 'Your card was declined. Please try a different card.';
-      throw new functions.https.HttpsError('failed-precondition', errorMessage);
+      throw new HttpsErrorGen2('failed-precondition', errorMessage);
     } else if (error.type === 'StripeInvalidRequestError') {
-      throw new functions.https.HttpsError('invalid-argument', 'Invalid payment request. Please try again.');
+      throw new HttpsErrorGen2('invalid-argument', 'Invalid payment request. Please try again.');
     } else if (error.type === 'StripeAuthenticationError') {
-      throw new functions.https.HttpsError('unauthenticated', 'Payment authentication failed. Please try again.');
+      throw new HttpsErrorGen2('unauthenticated', 'Payment authentication failed. Please try again.');
     } else if (error.type === 'StripePermissionError') {
-      throw new functions.https.HttpsError('permission-denied', 'Payment permission denied. Please contact support.');
+      throw new HttpsErrorGen2('permission-denied', 'Payment permission denied. Please contact support.');
     } else if (error.type === 'StripeRateLimitError') {
-      throw new functions.https.HttpsError('resource-exhausted', 'Too many payment requests. Please wait a moment and try again.');
+      throw new HttpsErrorGen2('resource-exhausted', 'Too many payment requests. Please wait a moment and try again.');
     } else if (error.type === 'StripeAPIError') {
-      throw new functions.https.HttpsError('internal', 'Payment service error. Please try again later.');
+      throw new HttpsErrorGen2('internal', 'Payment service error. Please try again later.');
     } else {
-      throw new functions.https.HttpsError('internal', 'Payment confirmation failed. Please try again.');
+      throw new HttpsErrorGen2('internal', 'Payment confirmation failed. Please try again.');
     }
   }
 });
@@ -1759,7 +1808,7 @@ exports.switchSubscriptionPlan = functions.https.onCall(async (data, context) =>
   try {
     // Verify authentication
     if (!context.auth) {
-      throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
+      throw new HttpsErrorGen2('unauthenticated', 'User must be authenticated');
     }
 
     const { subscriptionId, newPlan } = data;
@@ -1767,12 +1816,12 @@ exports.switchSubscriptionPlan = functions.https.onCall(async (data, context) =>
 
     // Validate required fields
     if (!subscriptionId || !newPlan) {
-      throw new functions.https.HttpsError('invalid-argument', 'Subscription ID and new plan are required');
+      throw new HttpsErrorGen2('invalid-argument', 'Subscription ID and new plan are required');
     }
 
     // Validate plan type
     if (!['monthly', 'yearly'].includes(newPlan)) {
-      throw new functions.https.HttpsError('invalid-argument', 'Invalid plan type. Must be "monthly" or "yearly"');
+      throw new HttpsErrorGen2('invalid-argument', 'Invalid plan type. Must be "monthly" or "yearly"');
     }
 
     console.log(`Switching subscription plan for user: ${userId}, subscription: ${subscriptionId}, new plan: ${newPlan}`);
@@ -1784,13 +1833,13 @@ exports.switchSubscriptionPlan = functions.https.onCall(async (data, context) =>
       // Determine the new price ID based on the plan
       let newPriceId;
       if (newPlan === 'monthly') {
-        newPriceId = functions.config().stripe?.monthly_price_id;
+        newPriceId = getRuntimeConfig().stripe?.monthly_price_id;
       } else {
-        newPriceId = functions.config().stripe?.yearly_price_id;
+        newPriceId = getRuntimeConfig().stripe?.yearly_price_id;
       }
       
       if (!newPriceId) {
-        throw new functions.https.HttpsError('internal', 'Price configuration not found');
+        throw new HttpsErrorGen2('internal', 'Price configuration not found');
       }
 
       // Update the subscription with the new price
@@ -1817,11 +1866,11 @@ exports.switchSubscriptionPlan = functions.https.onCall(async (data, context) =>
       
       // Handle specific Stripe errors
       if (stripeError.type === 'StripeInvalidRequestError') {
-        throw new functions.https.HttpsError('invalid-argument', 'Invalid subscription request');
+        throw new HttpsErrorGen2('invalid-argument', 'Invalid subscription request');
       } else if (stripeError.type === 'StripeCardError') {
-        throw new functions.https.HttpsError('failed-precondition', 'Payment method error');
+        throw new HttpsErrorGen2('failed-precondition', 'Payment method error');
       } else {
-        throw new functions.https.HttpsError('internal', 'Failed to update subscription');
+        throw new HttpsErrorGen2('internal', 'Failed to update subscription');
       }
     }
 
@@ -1833,7 +1882,7 @@ exports.switchSubscriptionPlan = functions.https.onCall(async (data, context) =>
       throw error;
     }
     
-    throw new functions.https.HttpsError('internal', 'Failed to switch subscription plan');
+    throw new HttpsErrorGen2('internal', 'Failed to switch subscription plan');
   }
 });
 
@@ -1843,7 +1892,7 @@ exports.scheduleSubscriptionCancellation = functions.https.onCall(async (data, c
   try {
     // Verify authentication
     if (!context.auth) {
-      throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
+      throw new HttpsErrorGen2('unauthenticated', 'User must be authenticated');
     }
 
     const { subscriptionId, endDate } = data;
@@ -1851,7 +1900,7 @@ exports.scheduleSubscriptionCancellation = functions.https.onCall(async (data, c
 
     // Validate required fields
     if (!subscriptionId || !endDate) {
-      throw new functions.https.HttpsError('invalid-argument', 'Subscription ID and end date are required');
+      throw new HttpsErrorGen2('invalid-argument', 'Subscription ID and end date are required');
     }
 
     console.log(`Scheduling subscription cancellation for user: ${userId}, subscription: ${subscriptionId}`);
@@ -1910,7 +1959,7 @@ exports.scheduleSubscriptionCancellation = functions.https.onCall(async (data, c
 
   } catch (error) {
     console.error('Error scheduling subscription cancellation:', error);
-    throw new functions.https.HttpsError('internal', 'Failed to schedule subscription cancellation');
+    throw new HttpsErrorGen2('internal', 'Failed to schedule subscription cancellation');
   }
 });
 
@@ -1920,7 +1969,7 @@ exports.createPaymentSheetIntent = functions.https.onCall(async (data, context) 
   try {
     // Verify authentication
     if (!context.auth) {
-      throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
+      throw new HttpsErrorGen2('unauthenticated', 'User must be authenticated');
     }
 
     const { amount, currency, planId, stripePriceId } = data;
@@ -1933,14 +1982,14 @@ exports.createPaymentSheetIntent = functions.https.onCall(async (data, context) 
     // Validate required fields
     if (!amount || !currency) {
       console.log(`Validation failed: amount=${amount}, currency=${currency}`);
-      throw new functions.https.HttpsError('invalid-argument', 'Amount and currency are required');
+      throw new HttpsErrorGen2('invalid-argument', 'Amount and currency are required');
     }
 
     // Ensure amount is a number
     const numericAmount = parseFloat(amount);
     if (isNaN(numericAmount) || numericAmount <= 0) {
       console.log(`Invalid amount: ${amount}`);
-      throw new functions.https.HttpsError('invalid-argument', 'Amount must be a positive number');
+      throw new HttpsErrorGen2('invalid-argument', 'Amount must be a positive number');
     }
 
     console.log(`Creating PaymentSheet intent for user: ${userId}, amount: ${numericAmount} ${currency}`);
@@ -1986,15 +2035,15 @@ exports.createPaymentSheetIntent = functions.https.onCall(async (data, context) 
       const stripeError = error;
       
       if (stripeError.type === 'StripeInvalidRequestError') {
-        throw new functions.https.HttpsError('invalid-argument', `Invalid payment request: ${error.message}`);
+        throw new HttpsErrorGen2('invalid-argument', `Invalid payment request: ${error.message}`);
       } else if (stripeError.type === 'StripeCardError') {
-        throw new functions.https.HttpsError('failed-precondition', 'Payment method error');
+        throw new HttpsErrorGen2('failed-precondition', 'Payment method error');
       } else {
-        throw new functions.https.HttpsError('internal', 'Payment processing error');
+        throw new HttpsErrorGen2('internal', 'Payment processing error');
       }
     }
     
-    throw new functions.https.HttpsError('internal', 'Failed to create payment intent');
+    throw new HttpsErrorGen2('internal', 'Failed to create payment intent');
   }
 });
 
@@ -2005,7 +2054,7 @@ exports.getUsageStats = functions.https.onCall(async (data, context) => {
   try {
     // Verify authentication and admin access
     if (!context.auth) {
-      throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
+      throw new HttpsErrorGen2('unauthenticated', 'User must be authenticated');
     }
 
     // Check if user is admin (you can customize this logic)
@@ -2014,13 +2063,13 @@ exports.getUsageStats = functions.https.onCall(async (data, context) => {
     
     // For now, allow access if user exists (you can add stricter admin checks later)
     if (!userDoc.exists) {
-      throw new functions.https.HttpsError('permission-denied', 'User not found');
+      throw new HttpsErrorGen2('permission-denied', 'User not found');
     }
     
     // Optional: Check for admin flag if it exists
     const userData = userDoc.data();
     if (userData.isAdmin === false) {
-      throw new functions.https.HttpsError('permission-denied', 'Admin access required');
+      throw new HttpsErrorGen2('permission-denied', 'Admin access required');
     }
 
     // Get time range from request (default to 7 days)
@@ -2057,7 +2106,7 @@ exports.getUsageStats = functions.https.onCall(async (data, context) => {
 
   } catch (error) {
     console.error("Error getting usage stats:", error);
-    throw new functions.https.HttpsError('internal', 'Failed to get usage statistics');
+    throw new HttpsErrorGen2('internal', 'Failed to get usage statistics');
   }
 });
 
@@ -2066,7 +2115,7 @@ exports.getBillingInfo = functions.https.onCall(async (data, context) => {
   try {
     // Verify authentication and admin access
     if (!context.auth) {
-      throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
+      throw new HttpsErrorGen2('unauthenticated', 'User must be authenticated');
     }
 
     const userId = context.auth.uid;
@@ -2074,13 +2123,13 @@ exports.getBillingInfo = functions.https.onCall(async (data, context) => {
     
     // For now, allow access if user exists (you can add stricter admin checks later)
     if (!userDoc.exists) {
-      throw new functions.https.HttpsError('permission-denied', 'User not found');
+      throw new HttpsErrorGen2('permission-denied', 'User not found');
     }
     
     // Optional: Check for admin flag if it exists
     const userData = userDoc.data();
     if (userData.isAdmin === false) {
-      throw new functions.https.HttpsError('permission-denied', 'Admin access required');
+      throw new HttpsErrorGen2('permission-denied', 'Admin access required');
     }
 
     // Note: This would require Google Cloud Billing API access
@@ -2097,7 +2146,7 @@ exports.getBillingInfo = functions.https.onCall(async (data, context) => {
 
   } catch (error) {
     console.error("Error getting billing info:", error);
-    throw new functions.https.HttpsError('internal', 'Failed to get billing information');
+    throw new HttpsErrorGen2('internal', 'Failed to get billing information');
   }
 });
 
@@ -2106,7 +2155,7 @@ exports.getUserAnalytics = functions.https.onCall(async (data, context) => {
   try {
     // Verify authentication and admin access
     if (!context.auth) {
-      throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
+      throw new HttpsErrorGen2('unauthenticated', 'User must be authenticated');
     }
 
     const userId = context.auth.uid;
@@ -2114,13 +2163,13 @@ exports.getUserAnalytics = functions.https.onCall(async (data, context) => {
     
     // For now, allow access if user exists (you can add stricter admin checks later)
     if (!userDoc.exists) {
-      throw new functions.https.HttpsError('permission-denied', 'User not found');
+      throw new HttpsErrorGen2('permission-denied', 'User not found');
     }
     
     // Optional: Check for admin flag if it exists
     const userData = userDoc.data();
     if (userData.isAdmin === false) {
-      throw new functions.https.HttpsError('permission-denied', 'Admin access required');
+      throw new HttpsErrorGen2('permission-denied', 'Admin access required');
     }
 
     // Get actual user statistics from Firestore
@@ -2169,7 +2218,7 @@ exports.getUserAnalytics = functions.https.onCall(async (data, context) => {
 
   } catch (error) {
     console.error("Error getting user analytics:", error);
-    throw new functions.https.HttpsError('internal', 'Failed to get user analytics');
+    throw new HttpsErrorGen2('internal', 'Failed to get user analytics');
   }
 });
 
@@ -2180,12 +2229,12 @@ exports.claimStartupBonus = functions.https.onCall(async (data, context) => {
   try {
     const uid = context.auth?.uid;
     if (!uid) {
-      throw new functions.https.HttpsError('unauthenticated', 'Sign in required.');
+      throw new HttpsErrorGen2('unauthenticated', 'Sign in required.');
     }
 
     const deviceHash = String(data?.deviceHash || "");
     if (!deviceHash || deviceHash.length < 32) {
-      throw new functions.https.HttpsError('invalid-argument', 'Bad device hash.');
+      throw new HttpsErrorGen2('invalid-argument', 'Bad device hash.');
     }
 
     console.log(`Claiming startup bonus for user ${uid} on device ${deviceHash}`);
@@ -2259,7 +2308,7 @@ exports.claimStartupBonus = functions.https.onCall(async (data, context) => {
     }
     
     // Wrap other errors
-    throw new functions.https.HttpsError('internal', 'Failed to claim startup bonus');
+    throw new HttpsErrorGen2('internal', 'Failed to claim startup bonus');
   }
 });
 
@@ -2268,12 +2317,12 @@ exports.isDeviceEligible = functions.https.onCall(async (data, context) => {
   try {
     const uid = context.auth?.uid;
     if (!uid) {
-      throw new functions.https.HttpsError('unauthenticated', 'Sign in required.');
+      throw new HttpsErrorGen2('unauthenticated', 'Sign in required.');
     }
 
     const deviceHash = String(data?.deviceHash || "");
     if (!deviceHash || deviceHash.length < 32) {
-      throw new functions.https.HttpsError('invalid-argument', 'Bad device hash.');
+      throw new HttpsErrorGen2('invalid-argument', 'Bad device hash.');
     }
 
     console.log(`Checking eligibility for user ${uid} on device ${deviceHash}`);
@@ -2311,6 +2360,6 @@ exports.isDeviceEligible = functions.https.onCall(async (data, context) => {
     }
     
     // Wrap other errors
-    throw new functions.https.HttpsError('internal', 'Failed to check device eligibility');
+    throw new HttpsErrorGen2('internal', 'Failed to check device eligibility');
   }
 });

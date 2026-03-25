@@ -45,6 +45,18 @@ npx firebase-tools functions:config:set python_backend.url="https://adoreventure
 npx firebase-tools deploy --only functions
 ```
 
+### Idea callables (Gen2 + min instances)
+
+`getIdeas` and `getSingleIdea` are deployed as **Cloud Functions 2nd gen** with **`minInstances: 1`** each so Firebase keeps one warm instance per function (reduces cold starts; **Blaze** billing applies).
+
+- **Deploy:** `npx firebase-tools deploy --only functions --force` (`--force` is required when `minInstances` increases minimum billing).
+- **Region** is set in `functions/index.js` as `IDEA_CALL_GEN2.region` (default `us-central1`).
+- **1st gen → 2nd gen (same name):** delete old functions first, e.g.  
+  `npx firebase-tools functions:delete getIdeas getSingleIdea --region us-central1 --force`
+- **Gen2 runtime config:** v2 cannot call `functions.config()` at startup; the code uses `getRuntimeConfig()` (reads `CLOUD_RUNTIME_CONFIG` from legacy `functions:config:set`). Plan migration to `.env` / secrets before March 2026 per Firebase’s deprecation notice.
+- **Gen2 callable IAM:** idea callables set `invoker: 'public'` so Cloud Run accepts HTTP traffic; Firebase Auth is still enforced via `request.auth` in the handler. Without this, the iOS client often gets `UNAUTHENTICATED` (Functions error 16).
+- **`.firebaserc`** must list a real default project id (e.g. `"default": "adoreventure"`), not a mistaken string key.
+
 ---
 
 ## Static support site (optional)
